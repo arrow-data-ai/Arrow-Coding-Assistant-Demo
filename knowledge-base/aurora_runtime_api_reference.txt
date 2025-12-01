@@ -1,0 +1,25 @@
+Aurora Runtime — Internal API Reference (Abbreviated)
+
+Class DataProcessor
+
+	Consumes sensor frames from HelixIO.
+	
+	Applies calibration + normalization.
+
+	Emits ProcessedFrame into NovaCore’s pipeline.
+
+Class AsyncScheduler
+
+	Wraps NovaCore to provide higher-level async task patterns.
+
+	Methods: scheduleOnce, scheduleRepeating, cancelTask.
+
+	Uses TaskHandle internally.
+
+Class MetricsSink
+
+	Aggregates metrics for StellarMetrics.
+
+	Must be thread-safe.
+
+	Provides: recordLatency, recordError, flush.

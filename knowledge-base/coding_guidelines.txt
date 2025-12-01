@@ -1,0 +1,31 @@
+Northwind Robotics — C++ Coding Guidelines (v3.2)
+
+Memory Management Rules
+
+	Prefer std::unique_ptr for ownership;
+
+	Use std::shared_ptr only when shared semantics are explicit;
+
+	Do not manually call new or delete except in low-level hardware adaptors;
+
+	Avoid raw owning pointers; raw non-owning pointers allowed for temp references;
+
+	Containers must own their elements (store objects or smart pointers).
+
+Concurrency Rules
+
+	All threads must be managed by an RAII wrapper.
+
+	Prefer std::jthread for safe cancellation.
+
+	Never detach threads in production.
+
+	Use Aurora::Mutex (thin wrapper over std::mutex with logging) instead of bare mutexes.
+
+Error Handling
+
+	Use StatusOr<T> for recoverable errors.
+
+	Only throw exceptions in constructors or critical failures.
+
+	Return Status for API boundary functions.

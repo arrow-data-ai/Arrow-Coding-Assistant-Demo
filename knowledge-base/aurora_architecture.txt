@@ -1,0 +1,35 @@
+Aurora Runtime Architecture Summary
+
+1. NovaCore (Event Loop)
+
+Manages scheduling of asynchronous tasks.
+
+Supports recurring tasks, delayed tasks, and CPU affinity mapping.
+
+Provides a TaskHandle RAII object.
+
+2. OrionSDK (Behavior Plugins)
+
+Implements robot behaviors as plugins loaded at runtime.
+
+Plugins must expose:
+
+extern "C" OrionPlugin* CreatePlugin();
+extern "C" void DestroyPlugin(OrionPlugin*);
+
+
+Plugin lifecycle: onLoad(), onStart(), onStop(), onUnload().
+
+3. HelixIO (Sensors)
+
+Normalizes heterogeneous sensor data.
+
+Guarantees timestamp synchronization within ±4 ms.
+
+Supports “Replay Mode” for offline evaluation.
+
+4. StellarMetrics (Telemetry)
+
+Provides Counter, Gauge, and Distribution types.
+
+Each metric must include a component label (e.g., “nova.core.workers”).

@@ -1,10 +1,11 @@
-streamlit
-st-theme
-langchain-ollama
-langchain-community
-langchain-huggingface
 langchain-nvidia-ai-endpoints
+langchain-huggingface
 langchain-unstructured
-unstructured
+langchain-text-splitters
+langchain-community
+langchain-classic
 unstructured[pdf]
 faiss-gpu
+gradio
+gradio_toggle
+jq

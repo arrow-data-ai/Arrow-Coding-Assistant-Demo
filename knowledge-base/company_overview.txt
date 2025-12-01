@@ -1,0 +1,12 @@
+Northwind Robotics — Software Engineering Division
+Northwind Robotics builds autonomous warehouse robots for inventory transport and picking. The C++ Platform Team maintains the “Aurora Runtime,” a high-performance framework for sensor fusion, motion planning, and teleoperation.
+
+Core Aurora components:
+
+NovaCore: Real-time event loop and concurrency framework
+
+OrionSDK: Plugin-based API for robot behaviors
+
+HelixIO: Unified interface for camera, LiDAR, and IMU data
+
+StellarMetrics: Low-latency telemetry and histogram reporting

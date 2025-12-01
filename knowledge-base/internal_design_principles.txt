@@ -1,0 +1,25 @@
+Northwind C++ Design Principles (Excerpt)
+
+Abstractions
+
+	Keep interfaces minimal and stable.
+
+	Implementations may vary but must not leak hardware details.
+
+Immutability First
+
+	Prefer immutable data shared across components whenever possible.
+
+	Mutable state should be isolated inside well-defined modules.
+
+RAII or Nothing
+
+	All resources (threads, file handles, sockets, GPU contexts) must be owned by RAII objects.
+
+	No naked resource acquisition in user code.
+
+Testability
+
+	Every class must provide an interface that can be mocked.
+
+	Behavior plugins require full simulation tests in NovaCore's test harness.
