@@ -3,6 +3,7 @@ from gradio_toggle import Toggle
 import time
 
 from local_code_assistant_engine import nim_rag_inference, nim_llm_inference, get_retrieved_sources
+from demo_prompts import DEMO_PROMPTS
 
 
 def coding_assistant_streaming(message, history, rag_toggle, selected_model):
@@ -77,6 +78,35 @@ with gr.Blocks(title="AI Coding Assistant") as demo:
             interactive=True,
         )
     
+    # Demo Prompts Panel - Easy copy-paste access
+    with gr.Accordion("📋 Demo Prompts", open=False):
+        
+        # Use prompts in the order they appear in demo_prompts.py
+        demo_prompt_dropdown = gr.Dropdown(
+            choices=[(v['title'], k) for k, v in DEMO_PROMPTS.items()],
+            label="Select Demo Prompt",
+        )
+        demo_prompt_display = gr.Markdown()
+        
+        def update_prompt_display(prompt_key):
+            """Update the prompt display when a prompt is selected."""
+            if not prompt_key or prompt_key not in DEMO_PROMPTS:
+                return ""
+            
+            prompt_data = DEMO_PROMPTS[prompt_key]
+            prompt_text = prompt_data['prompt']
+            # Format as markdown code block to get automatic copy button like in Chatbot
+            formatted_prompt = f"```\n{prompt_text}\n```"
+            return formatted_prompt
+        
+        demo_prompt_dropdown.change(
+            fn=update_prompt_display,
+            inputs=[demo_prompt_dropdown],
+            outputs=[demo_prompt_display]
+        )
+        
+        gr.Markdown("💡 **Tip:** The prompt is displayed above - just hit the copy button to paste into chat.")
+    
     # ChatInterface with streaming echo functionality
     chat_interface = gr.ChatInterface(
         fn=coding_assistant_streaming,
@@ -101,7 +131,7 @@ with gr.Blocks(title="AI Coding Assistant") as demo:
                 markdown += "---\n\n"
             return markdown
         
-        refresh_sources_btn = gr.Button("🔄 Refresh Sources", variant="secondary")
+        refresh_sources_btn = gr.Button("🔄 Refresh Sources 🔄", variant="secondary")
         refresh_sources_btn.click(
             fn=update_sources_display,
             outputs=[sources_display]
