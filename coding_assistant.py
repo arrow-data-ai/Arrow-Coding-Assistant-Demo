@@ -1,30 +1,34 @@
 import gradio as gr
 from gradio_toggle import Toggle
+import time
 
-from local_code_assistant_engine import nim_rag_inference, nim_llm_inference
+from local_code_assistant_engine import nim_rag_inference, nim_llm_inference, get_retrieved_sources
 
 
-
-def coding_assistant(message, history, rag_toggle, selected_model):
+def coding_assistant_streaming(message, history, rag_toggle, selected_model):
     """
-    Coding assistant that answers questions and helps troubleshoot code using the RAG engine.
+    Coding assistant with streaming response - yields response character by character.
+    This function is used by ChatInterface for streaming responses.
     
     Args:
         message: User's message
-        history: Chat history
+        history: Chat history (list of [user_message, assistant_message] tuples)
         rag_toggle: Boolean indicating whether to use RAG
         selected_model: Selected model name from dropdown
     """
-
-
+    # Get the full response
     if rag_toggle:
         # RAG mode: query the Arrow knowledge base
-        return nim_rag_inference(selected_model, message)
-
-    # Non‑RAG mode placeholder
+        full_response = nim_rag_inference(selected_model, message)
+    else:
+        # Non‑RAG mode
+        full_response = nim_llm_inference(selected_model, message)
     
-    else: 
-        return nim_llm_inference(selected_model, message)
+    # Stream the response character by character for visual effect
+    for i in range(len(full_response)):
+        time.sleep(0.01)  # Small delay for streaming effect (adjust as needed)
+        yield full_response[:i+1]
+
 
 # Create the demo
 with gr.Blocks(title="AI Coding Assistant") as demo:
@@ -43,8 +47,6 @@ with gr.Blocks(title="AI Coding Assistant") as demo:
         """
     )
 
-
-
     # Header row with title
     with gr.Row(elem_classes=["compact-header"]):
         gr.Markdown(
@@ -55,33 +57,55 @@ with gr.Blocks(title="AI Coding Assistant") as demo:
     # RAG diagram on top
     gr.Image("rag_diagram.png", show_label=False)
     
-    # Model selection dropdown
-    model_dropdown = gr.Dropdown(
-        choices=[
-            "CodeLlama 70B Instruct",
-            "CodeLlama 34B Instruct",
-            "CodeLlama 13B Instruct",
-            # "CodeLlama 7B Instruct",
-            # "StarCoder2 15B",
-        ],
-        value="CodeLlama 70B Instruct",
-        label="Select Model",
-        info="Choose the LLM model for the coding assistant",
+    # Model selection and RAG toggle
+    with gr.Row():
+        model_dropdown = gr.Dropdown(
+            choices=[
+                "CodeLlama 70B Instruct",
+                "CodeLlama 34B Instruct",
+                "CodeLlama 13B Instruct",
+            ],
+            value="CodeLlama 70B Instruct",
+            label="Select Model",
+            info="Choose the LLM model",
+        )
+        
+        # Toggle switch to choose between RAG and non‑RAG modes
+        rag_toggle = Toggle(
+            label="Use Knowledge Base",
+            value=True,
+            interactive=True,
+        )
+    
+    # ChatInterface with streaming echo functionality
+    chat_interface = gr.ChatInterface(
+        fn=coding_assistant_streaming,
+        additional_inputs=[rag_toggle, model_dropdown],
+        title=None,
     )
     
-    # Toggle switch to choose between RAG and non‑RAG modes (using gradio-toggle)
-    rag_toggle = Toggle(
-        label="Use Knowledge Base",
-        value=True,
-        interactive=True,
-    )
-
-    # Chat interface wired through the router so it can switch modes
-    chat_interface = gr.ChatInterface(
-        fn=coding_assistant,
-        additional_inputs=[rag_toggle, model_dropdown],
-        autofocus=False,
-    )
+    # Display retrieved sources (only shown when RAG is enabled)
+    with gr.Accordion("📚 Retrieved Sources", open=False):
+        sources_display = gr.Markdown("No sources retrieved yet. Ask a question with RAG enabled to see source files.")
+        
+        def update_sources_display():
+            """Update the sources display with the last retrieved documents."""
+            sources = get_retrieved_sources()
+            if not sources:
+                return "No sources retrieved yet. Ask a question with RAG enabled to see source files."
+            
+            markdown = "### Source Files:\n\n"
+            for i, (filename, preview) in enumerate(sources, 1):
+                markdown += f"**{i}. {filename}**\n\n"
+                markdown += f"```\n{preview}\n```\n\n"
+                markdown += "---\n\n"
+            return markdown
+        
+        refresh_sources_btn = gr.Button("🔄 Refresh Sources", variant="secondary")
+        refresh_sources_btn.click(
+            fn=update_sources_display,
+            outputs=[sources_display]
+        )
 
 
 if __name__ == "__main__":

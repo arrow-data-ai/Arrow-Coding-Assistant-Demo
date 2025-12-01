@@ -2,7 +2,7 @@
 import os 
 from pathlib import Path
  
- 
+
 # LLM and embedding model imports
 from langchain_nvidia_ai_endpoints import ChatNVIDIA  
 from langchain_huggingface import HuggingFaceEmbeddings
@@ -22,6 +22,9 @@ working_dir = os.path.dirname(os.path.abspath(__file__))
 
 # Initialize default embedding model 
 embeddings = HuggingFaceEmbeddings()
+
+# Global variable to store last retrieved documents for source display
+_last_retrieved_docs = []
 
 # Configuration for multiple local NIM instances
 # Map model identifiers to their local NIM port numbers
@@ -139,6 +142,10 @@ def nim_rag_inference(model, query):
     retriever = knowledge_base.as_retriever(search_kwargs={"k": 4})
     retrieved_docs = retriever.invoke(query)
     
+    # Store retrieved docs globally for source display
+    global _last_retrieved_docs
+    _last_retrieved_docs = retrieved_docs
+    
     # Debug output
     os.write(1, f"Retrieved {len(retrieved_docs)} documents\n".encode())
     if retrieved_docs:
@@ -160,6 +167,21 @@ def nim_rag_inference(model, query):
     
     # Call LLM directly - this bypasses RetrievalQA's additional processing
     response = llm.invoke(full_prompt)
+    
+    # Append sources information to the response
+    if retrieved_docs:
+        sources_text = "\n\n---\n\n**📚 Sources:**\n\n"
+        unique_sources = set()
+        for doc in retrieved_docs:
+            source = doc.metadata.get('source', 'Unknown')
+            filename = os.path.basename(source) if source != 'Unknown' else 'Unknown'
+            if filename != 'Unknown':
+                unique_sources.add(filename)
+        
+        if unique_sources:
+            for i, filename in enumerate(sorted(unique_sources), 1):
+                sources_text += f"• `{filename}`\n"
+            return response.content + sources_text
     
     return response.content
 
@@ -189,3 +211,21 @@ def nim_llm_inference(model, query):
     response = llm.invoke(prompt)
     return response.content
 
+
+def get_retrieved_sources():
+    """Get the file sources from the last RAG query.
+    
+    Returns:
+        list: List of tuples (filename, preview) for each retrieved document
+    """
+    global _last_retrieved_docs
+    sources = []
+    for doc in _last_retrieved_docs:
+        # Get source from metadata, fallback to 'Unknown'
+        source = doc.metadata.get('source', 'Unknown')
+        # Extract just the filename from the full path
+        filename = os.path.basename(source) if source != 'Unknown' else 'Unknown'
+        # Get a preview of the content (first 150 characters)
+        preview = doc.page_content[:150] + "..." if len(doc.page_content) > 150 else doc.page_content
+        sources.append((filename, preview))
+    return sources
