@@ -198,10 +198,10 @@ def nim_llm_inference(model, query):
     # Preprocess query to avoid safety triggers
     query_lower = query.lower()
     
-    # Detect if it's asking about Northwind/company-specific info
-    if any(word in query_lower for word in ["northwind", "api reference", "company", "proprietary"]):
-        # Return a simple "I don't know" response for demo purposes
-        return "I don't have information about that. I can help with general C++ programming questions."
+    # # Detect if it's asking about Northwind/company-specific info
+    # if any(word in query_lower for word in ["northwind" , "company", "proprietary"]):
+    #     # Return a simple "I don't know" response for demo purposes
+    #     return "I don't have information about that. I can help with general C++ programming questions."
     
     # For other questions, use a simple technical prompt
     prompt = f"""Answer this C++ programming question. If you don't know, say "I don't know."
