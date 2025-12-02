@@ -139,4 +139,10 @@ with gr.Blocks(title="AI Coding Assistant") as demo:
 
 
 if __name__ == "__main__":
-    demo.launch()
+    demo.launch(
+        share=False,
+        server_name="0.0.0.0",
+        server_port=7860,
+        show_error=True
+        )
+
