@@ -31,28 +31,38 @@ DEMO_PROMPTS = {
     },
     "4_unit_tests": {
         "title": "Prompt #4 — Add Unit Tests",
-        "prompt": """Generate GoogleTest unit tests for this ThreadPool class. Include tests for:
+        
+        "prompt": """Generate GoogleTest unit tests for the following C++20 ThreadPool class.
 
-        - Task execution
-        - Parallelism
-        - Shutdown behavior
-        - Stress test with 1,000 tasks
+                        Include tests for:
 
-        Keep tests minimal but illustrative.""",
-        "description": "Generate comprehensive unit tests"
-    },
-    "5_api_diagram": {
-        "title": "Prompt #5 — Using Your Project Docs",
-        "prompt": "Based on our internal API docs, generate a UML-style text diagram illustrating how the DataProcessor, AsyncScheduler, and MetricsSink components interact.",
-        "description": "Uses Northwind RAG dataset to generate architecture diagram"
-    },
-    "6_refactor": {
-        "title": "Prompt #6 — Refactor using RAG knowledge",
+                        - Task execution
+                        - Parallelism
+                        - Shutdown behavior
+                        - Stress test with 1,000 tasks
+
+                        **Requirements:**
+
+                        1. All tests must be deterministic — do **not** use `std::this_thread::sleep_for()` to wait for tasks. Use futures or other proper synchronization.
+
+                        2. Do **not** manually call the destructor; let it run at scope exit.
+
+                        3. For parallelism, verify that tasks run on multiple threads using thread IDs or other means.
+
+                        4. Stress tests must safely wait for all tasks to complete before assertions.
+
+                        5. Use modern C++20 features (std::jthread, std::atomic, std::invoke_result_t) where appropriate.
+
+                        6. Keep tests minimal but illustrative.""",
+                        "description": "Generate comprehensive unit tests"
+            },
+    "5_refactor": {
+        "title": "Prompt #5 — Refactor using RAG knowledge",
         "prompt": "Using the documented patterns in our C++ Design Principles guide, refactor the earlier ThreadPool to follow our recommended concurrency and error handling conventions.",
         "description": "Refactor code using internal design principles"
     },
-    "7_debug": {
-        "title": "Prompt #7 — Diagnose a bug",
+    "6_debug": {
+        "title": "Prompt #6 — Diagnose a bug",
         "prompt": """This code crashes or prints incorrect values. Explain why and fix it.
 
         std::vector<int*> v;
@@ -66,8 +76,8 @@ DEMO_PROMPTS = {
         """,
         "description": "Debug a common C++ memory issue"
     },
-    "8_optimize": {
-        "title": "Prompt #8 — Performance optimization",
+    "7_optimize": {
+        "title": "Prompt #7 — Performance optimization",
         "prompt": """Optimize the following function for speed, safety, and clarity. List the issues with the original code, then provide a revised version and explain the improvements.
 
         int slowSum(const std::vector<int>& values) {
@@ -106,7 +116,39 @@ DEMO_PROMPTS = {
     },
     "10_generate_modules": {
         "title": "Prompt #10 — Generate Modules",
-        "prompt": "Write the core plugin manager implementation based on step 3–6 of your plan. Include error handling and cross-platform abstractions.",
+        "prompt": """Task: Generate code with the following requirements:
+                        1. Provide core classes:
+                        - PluginManager
+                        - IPlugin (base plugin interface)
+                        - IPluginInterface (base plugin interface interface)
+                        - Plugin (implements IPlugin)
+                        - PluginInterface (implements IPluginInterface)
+                        
+                        2. Implement plugin loading:
+                        - Platform-specific: dlopen/dlsym on Linux, LoadLibrary/GetProcAddress on Windows
+                        - Include error handling for failed loads and missing symbols
+                        
+                        3. Implement plugin lifecycle:
+                        - load, initialize, interact, unload
+                        - Ensure RAII and safe resource cleanup
+                        
+                        4. Provide plugin discovery:
+                        - Scan a directory for dynamic libraries
+                        - Automatically load and register plugins
+                        
+                        5. Include interaction methods:
+                        - Retrieve plugin info
+                        - Call plugin methods
+                        - Access plugin data
+                        
+                        6. Ensure clarity, safety, and modern C++20 practices:
+                        - Use smart pointers (std::unique_ptr / std::shared_ptr) where needed
+                        - Use RAII for resource management
+                        - Provide comments for key methods
+                        
+                        Output:
+                        - Fully compilable C++20 code with headers included
+                        - Example usage in main() demonstrating plugin loading, interaction, and unloading""",
         "description": "Generate core implementation code"
     },
     "11_documentation": {

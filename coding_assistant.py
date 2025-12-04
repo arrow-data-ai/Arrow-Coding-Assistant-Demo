@@ -2,7 +2,11 @@ import gradio as gr
 from gradio_toggle import Toggle
 import time
 
-from local_code_assistant_engine import nim_rag_inference, nim_llm_inference, get_retrieved_sources
+from local_code_assistant_engine import (
+    nim_rag_inference, 
+    nim_llm_inference, 
+    get_retrieved_sources
+)
 from demo_prompts import DEMO_PROMPTS
 
 
