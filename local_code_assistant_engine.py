@@ -3,12 +3,11 @@ import os
 from pathlib import Path
 
 # LLM and embedding model imports
-from langchain_nvidia_ai_endpoints import ChatNVIDIA  
+from langchain_openai import ChatOpenAI
 from langchain_huggingface import HuggingFaceEmbeddings
 
 # Document loading and processing imports
-from langchain_unstructured import UnstructuredLoader
-from langchain_community.document_loaders import JSONLoader
+from langchain_community.document_loaders import JSONLoader, TextLoader, PyPDFLoader
 from langchain_text_splitters import CharacterTextSplitter
 
 # Vector store and QA chain imports
@@ -26,41 +25,34 @@ embeddings = HuggingFaceEmbeddings()
 # Global variable to store last retrieved documents for source display
 _last_retrieved_docs = []
 
-# Configuration for multiple local NIM instances
-# Map model identifiers to their local NIM port numbers
-# Each NIM instance should be running on a different port
-NIM_CONFIG = {
-    # Map models to their NIM base URLs
-    # You can configure different ports for different models
+# Configuration for vLLM instances
+# Map model identifiers to their vLLM port numbers
+# Each vLLM instance runs in a separate Docker container and exposes OpenAI-compatible endpoints
+VLLM_CONFIG = {
+    # CodeLlama 70B Instruct - Port 8000
     'codellama/codellama-70b-instruct': {'port': 8000, 'base_url': 'http://localhost:8000/v1'},
-    'codellama/codellama-34b-instruct': {'port': 8001, 'base_url': 'http://localhost:8001/v1'},
-    'codellama/codellama-13b-instruct': {'port': 8002, 'base_url': 'http://localhost:8002/v1'},
-    # 'meta/codellama-7b-instruct': {'port': 8003, 'base_url': 'http://localhost:8003/v1'},
-    # 'bigcode/starcoder2-15b-instruct': {'port': 8004, 'base_url': 'http://localhost:8004/v1'},
+    # CodeLlama 70B Base (not instruct-tuned) - Port 8001
+    'codellama/codellama-70b': {'port': 8001, 'base_url': 'http://localhost:8001/v1'},
     # Default fallback port if model not in config
     'default': {'port': 8000, 'base_url': 'http://localhost:8000/v1'}
 }
 
 def get_nim_llm(model):
-    """Get a ChatNVIDIA instance connected to a local NIM.
+    """Get a ChatOpenAI instance connected to a local vLLM server.
     
-    Maps user-friendly model names to their corresponding model identifiers and NIM base URLs,
-    then creates and returns a configured ChatNVIDIA instance with Langfuse callbacks for observability.
+    Maps user-friendly model names to their corresponding model identifiers and vLLM base URLs,
+    then creates and returns a configured ChatOpenAI instance that connects to the vLLM OpenAI-compatible endpoint.
     
     Args:
         model (str): The user-friendly model name (e.g., "CodeLlama 70B Instruct")
-        temperature (float): Temperature setting for the model
     
     Returns:
-        ChatNVIDIA: Configured ChatNVIDIA instance connected to the appropriate local NIM
+        ChatOpenAI: Configured ChatOpenAI instance connected to the appropriate local vLLM server
     """
     # Map user-friendly model names to model identifiers
     model_mapping = {
         'CodeLlama 70B Instruct': 'codellama/codellama-70b-instruct',
-        'CodeLlama 34B Instruct': 'codellama/codellama-34b-instruct',
-        'CodeLlama 13B Instruct': 'codellama/codellama-13b-instruct',
-        'CodeLlama 7B Instruct': 'codellama/codellama-7b-instruct',
-        'StarCoder2 15B': 'bigcode/starcoder2-15b-instruct',
+        'CodeLlama 70B': 'codellama/codellama-70b',
     }
     
     model_id = model_mapping.get(model)
@@ -68,24 +60,26 @@ def get_nim_llm(model):
         raise ValueError(f"Unknown model: {model}")
     
     # Get base URL from config, or use default
-    nim_config = NIM_CONFIG.get(model_id, NIM_CONFIG['default'])
-    base_url = nim_config['base_url']
+    vllm_config = VLLM_CONFIG.get(model_id, VLLM_CONFIG['default'])
+    base_url = vllm_config['base_url']
     
-    # Create and return ChatNVIDIA instance
-    # max_tokens set to  model's 4096 token context limit
+    # Create and return ChatOpenAI instance
+    # vLLM exposes OpenAI-compatible endpoints, so we use ChatOpenAI
+    # max_tokens set to model's 4096 token context limit
     # This allows longer responses while leaving buffer for input messages
-    llm = ChatNVIDIA(
+    llm = ChatOpenAI(
         base_url=base_url,
         model=model_id,
         temperature=0.0,
         max_tokens=3000,
+        api_key="not-needed",  # vLLM doesn't require API key, but ChatOpenAI expects one
     )
     
     return llm
 
 
 def nim_rag_inference(model, query):
-    """Process all .txt, .pdf , .md and .jsonl files in the knowledge base folder using local deployment.
+    """Process all .txt, .pdf , .md and .jsonl files in the knowledge base folder using local vLLM deployment.
     
     Args:
         model (str): The user-friendly model name
@@ -103,17 +97,27 @@ def nim_rag_inference(model, query):
     folder_path = Path(f"{working_dir}/knowledge-base")
 
     # Separate files by type
-    txt_pdf_md_files = (list(folder_path.glob('*.txt')) + 
-                        list(folder_path.glob('*.pdf')) + 
-                        list(folder_path.glob('*.md')))
-    
+    txt_files = list(folder_path.glob('*.txt'))
+    pdf_files = list(folder_path.glob('*.pdf'))
+    md_files = list(folder_path.glob('*.md'))
     jsonl_files = list(folder_path.glob('*.jsonl'))
     
     docs = []
   
-    # Load structured files (txt, pdf, md) using UnstructuredLoader
-    if txt_pdf_md_files:
-        docs.extend(UnstructuredLoader(txt_pdf_md_files).load())
+    # Load text files
+    for txt_file in txt_files:
+        loader = TextLoader(str(txt_file))
+        docs.extend(loader.load())
+    
+    # Load PDF files
+    for pdf_file in pdf_files:
+        loader = PyPDFLoader(str(pdf_file))
+        docs.extend(loader.load())
+    
+    # Load markdown files
+    for md_file in md_files:
+        loader = TextLoader(str(md_file))
+        docs.extend(loader.load())
     
     # Load JSONL files using JSONLoader
     for jsonl_file in jsonl_files:
@@ -172,7 +176,7 @@ def nim_rag_inference(model, query):
 
             Technical C++ question: {query}
 
-Provide a direct technical answer: [/INST]"""
+            Provide a direct technical answer: [/INST]"""
     
     # Call LLM directly - this bypasses RetrievalQA's additional processing
     response = llm.invoke(full_prompt)
@@ -197,7 +201,7 @@ Provide a direct technical answer: [/INST]"""
 
 
 def nim_llm_inference(model, query):
-    """Make a raw LLM call to the local NIM.
+    """Make a raw LLM call to the local vLLM server.
     
     Args:
         model (str): The user-friendly model name

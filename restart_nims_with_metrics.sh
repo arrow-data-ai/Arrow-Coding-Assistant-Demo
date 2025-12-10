@@ -3,8 +3,6 @@
 
 # Source API keys if available
 if [ -f "keys.env" ]; then
-    source keys.env
-    echo "Loaded API keys from keys.env"
 fi
 
 # Check if NGC_API_KEY is set

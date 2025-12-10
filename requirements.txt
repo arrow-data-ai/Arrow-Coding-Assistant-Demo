@@ -1,12 +1,11 @@
-langchain-nvidia-ai-endpoints
+langchain-openai
 langchain-huggingface
-langchain-unstructured
 langchain-text-splitters
 langchain-community
 langchain-classic
-unstructured[pdf]
-faiss-gpu
-numpy<2
+pypdf
+faiss-gpu-cu12>=1.13.0
 gradio
 gradio_toggle
 jq
+vllm

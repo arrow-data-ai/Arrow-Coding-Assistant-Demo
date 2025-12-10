@@ -1,0 +1,64 @@
+version: '3.8'
+
+services:
+  # CodeLlama 70B Instruct - Port 8000
+  codellama-70b-instruct:
+    image: vllm/vllm-openai:latest
+    container_name: vllm-codellama-70b-instruct
+    ports:
+      - "8000:8000"
+    volumes:
+      - ~/.cache/huggingface:/root/.cache/huggingface
+    environment:
+      - HF_TOKEN=${HF_TOKEN}
+      - CUDA_VISIBLE_DEVICES=0,1  # Use first 2 GPUs
+    command: >
+      --model codellama/CodeLlama-70b-Instruct-hf
+      --port 8000
+      --tensor-parallel-size 2
+      --max-model-len 4096
+      --gpu-memory-utilization 0.95
+      --dtype auto
+      --trust-remote-code
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ['0', '1']
+              capabilities: [gpu]
+    restart: unless-stopped
+    ipc: host
+
+  # CodeLlama 70B (Base model, not instruct) - Port 8001
+  codellama-70b:
+    image: vllm/vllm-openai:latest
+    container_name: vllm-codellama-70b
+    ports:
+      - "8001:8000"
+    volumes:
+      - ~/.cache/huggingface:/root/.cache/huggingface
+    environment:
+      - HF_TOKEN=${HF_TOKEN}
+      - CUDA_VISIBLE_DEVICES=2,3  # Use GPUs 2 and 3
+    command: >
+      --model codellama/CodeLlama-70b-hf
+      --port 8000
+      --tensor-parallel-size 2
+      --max-model-len 4096
+      --gpu-memory-utilization 0.95
+      --dtype auto
+      --trust-remote-code
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ['2', '3']
+              capabilities: [gpu]
+    restart: unless-stopped
+    ipc: host
+
+networks:
+  default:
+    name: vllm-network
