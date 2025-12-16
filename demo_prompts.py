@@ -14,7 +14,7 @@ DEMO_PROMPTS = {
     },
     "2_with_without_rag": {
         "title": "Prompt #2 - Memory Management",
-        "prompt": "Explain best C++ coding practices.",
+        "prompt": "Explain our company's Northwind Robotics recommended memory management strategy in C++.",
         "description": "Turn off RAG to show generic answer"
     },
     "3_class_design": {

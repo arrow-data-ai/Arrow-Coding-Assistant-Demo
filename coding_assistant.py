@@ -5,7 +5,8 @@ import time
 from local_code_assistant_engine import (
     vllm_rag_inference, 
     vllm_llm_inference, 
-    get_retrieved_sources
+    get_retrieved_sources,
+    clear_retrieved_sources
 )
 from demo_prompts import DEMO_PROMPTS
 
@@ -26,6 +27,8 @@ def coding_assistant_streaming(message, history, rag_toggle, selected_model):
         if rag_toggle:
             result = vllm_rag_inference(selected_model, message)
         else:
+            # Clear retrieved sources when RAG is disabled
+            clear_retrieved_sources()
             result = vllm_llm_inference(selected_model, message)
         
         # Extract response text and metrics
@@ -131,8 +134,15 @@ with gr.Blocks(title="AI Coding Assistant") as demo:
     with gr.Accordion("📚 Retrieved Sources", open=False):
         sources_display = gr.Markdown("No sources retrieved yet. Ask a question with RAG enabled to see source files.")
         
-        def update_sources_display():
-            """Update the sources display with the last retrieved documents."""
+        def update_sources_display(rag_enabled):
+            """Update the sources display with the last retrieved documents.
+            
+            Args:
+                rag_enabled: Boolean indicating if RAG is currently enabled
+            """
+            if not rag_enabled:
+                return "⚠️ **RAG mode is currently disabled.** Enable 'Use Knowledge Base' to see retrieved sources."
+            
             sources = get_retrieved_sources()
             if not sources:
                 return "No sources retrieved yet. Ask a question with RAG enabled to see source files."
@@ -147,6 +157,7 @@ with gr.Blocks(title="AI Coding Assistant") as demo:
         refresh_sources_btn = gr.Button("🔄 Refresh Sources 🔄", variant="secondary")
         refresh_sources_btn.click(
             fn=update_sources_display,
+            inputs=[rag_toggle],
             outputs=[sources_display]
         )
 

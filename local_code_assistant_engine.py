@@ -318,5 +318,11 @@ def get_retrieved_sources():
     return sources
 
 
+def clear_retrieved_sources():
+    """Clear the retrieved sources (used when RAG is disabled)."""
+    global _last_retrieved_docs
+    _last_retrieved_docs = []
+
+
 
 
