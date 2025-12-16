@@ -22,16 +22,25 @@ def coding_assistant_streaming(message, history, rag_toggle, selected_model):
         selected_model: Selected model name from dropdown
     """
     try:
-        # Get the full response
+        # Get the full response (now a dict with 'response' and 'metrics')
         if rag_toggle:
-            full_response = vllm_rag_inference(selected_model, message)
+            result = vllm_rag_inference(selected_model, message)
         else:
-            full_response = vllm_llm_inference(selected_model, message)
+            result = vllm_llm_inference(selected_model, message)
+        
+        # Extract response text and metrics
+        full_response = result['response']
+        metrics = result['metrics']
         
         # Stream the response character by character for visual effect
         for i in range(len(full_response)):
             time.sleep(0.01)
             yield full_response[:i+1]
+        
+        # AFTER streaming completes, append metrics
+        metrics_text = f"\n\n---\n\n⚡ **Performance:** {metrics['tps']:.1f} tokens/sec | {metrics['tokens']} tokens in {metrics['time']:.2f}s"
+        yield full_response + metrics_text
+        
     except Exception as e:
         yield f"Error: {str(e)}"
 

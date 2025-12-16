@@ -205,7 +205,26 @@ def vllm_rag_inference(model, query):
                         Provide a direct technical answer:"""
     
     # Call LLM directly - this bypasses RetrievalQA's additional processing
+    # START: Add timing
+    import time
+    start_time = time.time()
     response = llm.invoke(full_prompt)
+    end_time = time.time()
+    elapsed_time = end_time - start_time
+    
+    # Get token count from response metadata
+    completion_tokens = None
+    if hasattr(response, 'response_metadata'):
+        completion_tokens = response.response_metadata.get('usage', {}).get('completion_tokens', None)
+    
+    # Calculate TPS
+    if completion_tokens and elapsed_time > 0:
+        tokens_per_second = completion_tokens / elapsed_time
+        estimated_tokens = completion_tokens
+    else:
+        # Fallback: estimate from character count
+        estimated_tokens = len(response.content) // 4
+        tokens_per_second = estimated_tokens / elapsed_time if elapsed_time > 0 else 0
     
     # Append sources information to the response
     response_content = response.content
@@ -224,7 +243,15 @@ def vllm_rag_inference(model, query):
                 sources_text += f"• `{filename}`\n"
             response_content = response_content + sources_text
     
-    return response_content
+    # Return both response AND metrics
+    return {
+        'response': response_content,
+        'metrics': {
+            'tokens': estimated_tokens,
+            'time': elapsed_time,
+            'tps': tokens_per_second
+        }
+    }
 
 
 def vllm_llm_inference(model, query):
@@ -240,8 +267,36 @@ def vllm_llm_inference(model, query):
 
     Question: {query}"""
     
+    # START: Add timing
+    import time
+    start_time = time.time()
     response = llm.invoke(prompt)
-    return response.content
+    end_time = time.time()
+    elapsed_time = end_time - start_time
+    
+    # Get token count from response metadata
+    completion_tokens = None
+    if hasattr(response, 'response_metadata'):
+        completion_tokens = response.response_metadata.get('usage', {}).get('completion_tokens', None)
+    
+    # Calculate TPS
+    if completion_tokens and elapsed_time > 0:
+        tokens_per_second = completion_tokens / elapsed_time
+        estimated_tokens = completion_tokens
+    else:
+        # Fallback: estimate from character count
+        estimated_tokens = len(response.content) // 4
+        tokens_per_second = estimated_tokens / elapsed_time if elapsed_time > 0 else 0
+    
+    # Return both response AND metrics
+    return {
+        'response': response.content,
+        'metrics': {
+            'tokens': estimated_tokens,
+            'time': elapsed_time,
+            'tps': tokens_per_second
+        }
+    }
 
 
 def get_retrieved_sources():
