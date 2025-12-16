@@ -9,3 +9,6 @@ gradio
 gradio_toggle
 jq
 vllm
+tiktoken
+transformers
+requests

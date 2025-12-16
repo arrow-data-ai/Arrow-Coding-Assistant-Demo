@@ -31,9 +31,14 @@ case $SERVICE in
         docker compose -f docker-compose.vllm.yml stop codellama-70b
         docker compose -f docker-compose.vllm.yml rm -f codellama-70b
         ;;
+    llama-3.3|llama3.3|3.3)
+        echo -e "${GREEN}Stopping Llama 3.3 70B Instruct...${NC}"
+        docker compose -f docker-compose.vllm.yml stop llama-3.3-70b-instruct
+        docker compose -f docker-compose.vllm.yml rm -f llama-3.3-70b-instruct
+        ;;
     *)
         echo -e "${RED}Unknown service: $SERVICE${NC}"
-        echo "Usage: $0 [all|70b-instruct|70b|instruct|base]"
+        echo "Usage: $0 [all|70b-instruct|70b|instruct|base|llama-3.3]"
         exit 1
         ;;
 esac

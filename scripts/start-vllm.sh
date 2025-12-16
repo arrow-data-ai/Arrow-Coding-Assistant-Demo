@@ -54,9 +54,13 @@ case $SERVICE in
         echo -e "${GREEN}Starting CodeLlama 70B (Base)...${NC}"
         docker compose -f docker-compose.vllm.yml up -d codellama-70b
         ;;
+    llama-3.3|llama3.3|3.3)
+        echo -e "${GREEN}Starting Llama 3.3 70B Instruct...${NC}"
+        docker compose -f docker-compose.vllm.yml up -d llama-3.3-70b-instruct
+        ;;
     *)
         echo -e "${RED}Unknown service: $SERVICE${NC}"
-        echo "Usage: $0 [all|70b-instruct|70b|instruct|base]"
+        echo "Usage: $0 [all|70b-instruct|70b|instruct|base|llama-3.3]"
         exit 1
         ;;
 esac
@@ -70,4 +74,5 @@ echo ""
 echo "Endpoints:"
 echo "  - CodeLlama 70B Instruct: http://localhost:8000"
 echo "  - CodeLlama 70B (Base):   http://localhost:8001"
+echo "  - Llama 3.3 70B Instruct: http://localhost:8002"
 

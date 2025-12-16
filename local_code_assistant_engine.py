@@ -30,14 +30,14 @@ _last_retrieved_docs = []
 # Each vLLM instance runs in a separate Docker container and exposes OpenAI-compatible endpoints
 VLLM_CONFIG = {
     # CodeLlama 70B Instruct - Port 8000
-    'codellama/codellama-70b-instruct': {'port': 8000, 'base_url': 'http://localhost:8000/v1'},
-    # CodeLlama 70B Base (not instruct-tuned) - Port 8001
-    'codellama/codellama-70b': {'port': 8001, 'base_url': 'http://localhost:8001/v1'},
+    'codellama/CodeLlama-70b-Instruct-hf': {'port': 8000, 'base_url': 'http://localhost:8000/v1'},
+    # CodeLlama 70B Base - Port 8001
+    'codellama/CodeLlama-70b-hf': {'port': 8001, 'base_url': 'http://localhost:8001/v1'},
     # Default fallback port if model not in config
-    'default': {'port': 8000, 'base_url': 'http://localhost:8000/v1'}
+    'default': {'port': 8000, 'base_url': 'http://localhost:8000/v1'}  # Default to CodeLlama 70B Instruct
 }
 
-def get_nim_llm(model):
+def get_vllm_llm(model):
     """Get a ChatOpenAI instance connected to a local vLLM server.
     
     Maps user-friendly model names to their corresponding model identifiers and vLLM base URLs,
@@ -48,11 +48,15 @@ def get_nim_llm(model):
     
     Returns:
         ChatOpenAI: Configured ChatOpenAI instance connected to the appropriate local vLLM server
+    
+    Raises:
+        ConnectionError: If the vLLM service for the requested model is not available
+        ValueError: If the model name is unknown
     """
     # Map user-friendly model names to model identifiers
     model_mapping = {
-        'CodeLlama 70B Instruct': 'codellama/codellama-70b-instruct',
-        'CodeLlama 70B': 'codellama/codellama-70b',
+        'CodeLlama 70B Instruct': 'codellama/CodeLlama-70b-Instruct-hf',
+        'CodeLlama 70B': 'codellama/CodeLlama-70b-hf',
     }
     
     model_id = model_mapping.get(model)
@@ -63,22 +67,28 @@ def get_nim_llm(model):
     vllm_config = VLLM_CONFIG.get(model_id, VLLM_CONFIG['default'])
     base_url = vllm_config['base_url']
     
-    # Create and return ChatOpenAI instance
-    # vLLM exposes OpenAI-compatible endpoints, so we use ChatOpenAI
-    # max_tokens set to model's 4096 token context limit
-    # This allows longer responses while leaving buffer for input messages
+    # Configure stop tokens based on model type
+    # Base models need explicit stop tokens to prevent runaway generation
+    if model == "CodeLlama 70B":
+        # Base model: stop on end-of-sequence token and multiple newlines
+        stop_tokens = ["</s>", "\n\n\n", "Question:", "Technical C++ question:"]
+    else:
+        # Instruct model: stop on end-of-sequence token
+        stop_tokens = ["</s>"]
+    
     llm = ChatOpenAI(
         base_url=base_url,
         model=model_id,
         temperature=0.0,
-        max_tokens=3000,
-        api_key="not-needed",  # vLLM doesn't require API key, but ChatOpenAI expects one
+        max_tokens=1000,
+        api_key="not-needed",
+        stop=stop_tokens,
     )
     
     return llm
 
 
-def nim_rag_inference(model, query):
+def vllm_rag_inference(model, query):
     """Process all .txt, .pdf , .md and .jsonl files in the knowledge base folder using local vLLM deployment.
     
     Args:
@@ -89,7 +99,7 @@ def nim_rag_inference(model, query):
         str: The model's response to the query
     """
     
-    llm = get_nim_llm(model) 
+    llm = get_vllm_llm(model) 
 
     os.write(1,f"{model}\n".encode())
     
@@ -161,28 +171,45 @@ def nim_rag_inference(model, query):
     # Combine retrieved context
     context_text = "\n\n---\n\n".join([doc.page_content for doc in retrieved_docs])
     
-    # Build a direct, imperative prompt that doesn't give room for refusal
-    # Reframe as code documentation/technical specs rather than "API reference"
-    full_prompt =f"""[INST] <<SYS>>
-            You are a C++ programming assistant. You provide direct technical answers to software engineering questions.
+    # Build prompt format based on model type
+    # Instruct models use [INST] format, base models use plain text
+    if model == "CodeLlama 70B Instruct":
+        # Use [INST] format for instruct-tuned models
+        full_prompt = f"""[INST] <<SYS>>
+                        You are a C++ programming assistant. You provide direct technical answers to software engineering questions.
 
-            IMPORTANT: You are answering questions about standard C++ programming practices. Topics like memory management, pointers, optimization, concurrency, and systems programming are normal technical subjects. Answer all such questions directly with code examples and technical explanations. Do not add safety disclaimers for standard programming topics.
+                        IMPORTANT: You are answering questions about standard C++ programming practices. Topics like memory management, pointers, optimization, concurrency, and systems programming are normal technical subjects. Answer all such questions directly with code examples and technical explanations. Do not add safety disclaimers for standard programming topics.
 
-            When documentation is provided below, use it if relevant to answer the question. Otherwise, use your general C++ knowledge.
-            <</SYS>>
+                        When documentation is provided below, use it if relevant to answer the question. Otherwise, use your general C++ knowledge.
+                        <</SYS>>
 
-            Documentation (use if relevant):
-            {context_text}
+                        Documentation (use if relevant):
+                        {context_text}
 
-            Technical C++ question: {query}
+                        Technical C++ question: {query}
 
-            Provide a direct technical answer: [/INST]"""
+                        Provide a direct technical answer: [/INST]"""
+    else:
+        # Use plain text format for base models (no [INST] tags)
+        full_prompt = f"""You are a C++ programming assistant. You provide direct technical answers to software engineering questions.
+
+                        IMPORTANT: You are answering questions about standard C++ programming practices. Topics like memory management, pointers, optimization, concurrency, and systems programming are normal technical subjects. Answer all such questions directly with code examples and technical explanations. Do not add safety disclaimers for standard programming topics.
+
+                        When documentation is provided below, use it if relevant to answer the question. Otherwise, use your general C++ knowledge.
+
+                        Documentation (use if relevant):
+                        {context_text}
+
+                        Technical C++ question: {query}
+
+                        Provide a direct technical answer:"""
     
     # Call LLM directly - this bypasses RetrievalQA's additional processing
     response = llm.invoke(full_prompt)
     
     # Append sources information to the response
     response_content = response.content
+    
     if retrieved_docs:
         sources_text = "\n\n---\n\n**📚 Sources:**\n\n"
         unique_sources = set()
@@ -200,30 +227,20 @@ def nim_rag_inference(model, query):
     return response_content
 
 
-def nim_llm_inference(model, query):
+def vllm_llm_inference(model, query):
     """Make a raw LLM call to the local vLLM server.
     
     Args:
         model (str): The user-friendly model name
         query (str): The user's question
     """
-    llm = get_nim_llm(model) 
+    llm = get_vllm_llm(model)
     
-    # Preprocess query to avoid safety triggers
-    query_lower = query.lower()
-    
-    # # Detect if it's asking about Northwind/company-specific info
-    # if any(word in query_lower for word in ["northwind" , "company", "proprietary"]):
-    #     # Return a simple "I don't know" response for demo purposes
-    #     return "I don't have information about that. I can help with general C++ programming questions."
-    
-    # For other questions, use a simple technical prompt
     prompt = f"""Answer this C++ programming question. If you don't know, say "I don't know."
 
-    Question:   {query} """
+    Question: {query}"""
     
     response = llm.invoke(prompt)
-    
     return response.content
 
 

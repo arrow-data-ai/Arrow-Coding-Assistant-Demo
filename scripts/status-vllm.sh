@@ -35,4 +35,5 @@ check_endpoint() {
 
 check_endpoint 8000 "CodeLlama 70B Instruct"
 check_endpoint 8001 "CodeLlama 70B (Base)"
+check_endpoint 8002 "Llama 3.3 70B Instruct"
 

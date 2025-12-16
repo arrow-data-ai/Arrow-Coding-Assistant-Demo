@@ -3,8 +3,8 @@ from gradio_toggle import Toggle
 import time
 
 from local_code_assistant_engine import (
-    nim_rag_inference, 
-    nim_llm_inference, 
+    vllm_rag_inference, 
+    vllm_llm_inference, 
     get_retrieved_sources
 )
 from demo_prompts import DEMO_PROMPTS
@@ -21,18 +21,19 @@ def coding_assistant_streaming(message, history, rag_toggle, selected_model):
         rag_toggle: Boolean indicating whether to use RAG
         selected_model: Selected model name from dropdown
     """
-    # Get the full response
-    if rag_toggle:
-        # RAG mode: query the Arrow knowledge base
-        full_response = nim_rag_inference(selected_model, message)
-    else:
-        # Non‑RAG mode
-        full_response = nim_llm_inference(selected_model, message)
-    
-    # Stream the response character by character for visual effect
-    for i in range(len(full_response)):
-        time.sleep(0.01)  # Small delay for streaming effect (adjust as needed)
-        yield full_response[:i+1]
+    try:
+        # Get the full response
+        if rag_toggle:
+            full_response = vllm_rag_inference(selected_model, message)
+        else:
+            full_response = vllm_llm_inference(selected_model, message)
+        
+        # Stream the response character by character for visual effect
+        for i in range(len(full_response)):
+            time.sleep(0.01)
+            yield full_response[:i+1]
+    except Exception as e:
+        yield f"Error: {str(e)}"
 
 
 # Create the demo
@@ -67,12 +68,11 @@ with gr.Blocks(title="AI Coding Assistant") as demo:
         model_dropdown = gr.Dropdown(
             choices=[
                 "CodeLlama 70B Instruct",
-                "CodeLlama 34B Instruct",
-                "CodeLlama 13B Instruct",
+                "CodeLlama 70B",
             ],
             value="CodeLlama 70B Instruct",
             label="Select Model",
-            info="Choose the LLM model",
+            info="Choose the LLM model (ensure the vLLM service is running)",
         )
         
         # Toggle switch to choose between RAG and non‑RAG modes
