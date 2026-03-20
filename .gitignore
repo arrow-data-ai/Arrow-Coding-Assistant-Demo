@@ -49,3 +49,8 @@ Thumbs.db
 *.wmv
 .venv 
 .nfs*
+
+.env
+.venv/
+.vscode/
+.gradio/   

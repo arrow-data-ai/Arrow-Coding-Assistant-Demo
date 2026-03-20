@@ -1,10 +1,10 @@
 version: '3.8'
 
 services:
-  # CodeLlama 70B Instruct - Port 8000
-  codellama-70b-instruct:
+  # llamacode-7b (CodeLlama 7B Instruct) - Port 8000
+  llamacode-7b-instruct:
     image: vllm/vllm-openai:latest
-    container_name: vllm-codellama-70b-instruct
+    container_name: vllm-llamacode-7b-instruct
     ports:
       - "8000:8000"
     volumes:
@@ -13,7 +13,7 @@ services:
       - HF_TOKEN=${HF_TOKEN}
       - CUDA_VISIBLE_DEVICES=0,1,2,3  # Docker maps assigned GPUs to 0-3
     command: >
-      --model codellama/CodeLlama-70b-Instruct-hf
+      --model codellama/CodeLlama-7b-Instruct-hf
       --port 8000
       --tensor-parallel-size 4
       --max-model-len 2048
@@ -30,10 +30,10 @@ services:
     restart: unless-stopped
     ipc: host
 
-  # CodeLlama 70B (Base model, not instruct) - Port 8001
-  codellama-70b:
+  # llamacode-7b (CodeLlama 7B base model, not instruct) - Port 8001
+  llamacode-7b:
     image: vllm/vllm-openai:latest
-    container_name: vllm-codellama-70b
+    container_name: vllm-llamacode-7b
     ports:
       - "8001:8000"
     volumes:
@@ -43,7 +43,7 @@ services:
       - HF_TOKEN=${HF_TOKEN}
       - CUDA_VISIBLE_DEVICES=0,1,2,3  # Docker maps assigned GPUs to 0-3
     command: >
-      --model codellama/CodeLlama-70b-hf
+      --model codellama/CodeLlama-7b-hf
       --port 8000
       --tensor-parallel-size 4
       --max-model-len 2048

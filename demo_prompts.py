@@ -1,5 +1,5 @@
 """
-Demo prompts for CodeLlama 70B + RAG + C++ Engineering Workflows demo
+Demo prompts for llamacode-7b (CodeLlama 7B) + RAG + C++ Engineering Workflows demo
 90-Minute Demo Script
 
 This file contains all prompts from the demo script organized by section.

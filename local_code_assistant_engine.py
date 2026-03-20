@@ -25,56 +25,24 @@ embeddings = HuggingFaceEmbeddings()
 # Global variable to store last retrieved documents for source display
 _last_retrieved_docs = []
 
-# Configuration for vLLM instances
-# Map model identifiers to their vLLM port numbers
-# Each vLLM instance runs in a separate Docker container and exposes OpenAI-compatible endpoints
+# Configuration for vLLM instance
+# Single local deployment of llamacode-7b (CodeLlama 7B Instruct) exposed via OpenAI-compatible endpoint
 VLLM_CONFIG = {
-    # CodeLlama 70B Instruct - Port 8000
-    'codellama/CodeLlama-70b-Instruct-hf': {'port': 8000, 'base_url': 'http://localhost:8000/v1'},
-    # CodeLlama 70B Base - Port 8001
-    'codellama/CodeLlama-70b-hf': {'port': 8001, 'base_url': 'http://localhost:8001/v1'},
-    # Default fallback port if model not in config
-    'default': {'port': 8000, 'base_url': 'http://localhost:8000/v1'}  # Default to CodeLlama 70B Instruct
+    'codellama/CodeLlama-7b-Instruct-hf': {'port': 8000, 'base_url': 'http://localhost:8000/v1'},
 }
 
-def get_vllm_llm(model):
-    """Get a ChatOpenAI instance connected to a local vLLM server.
+def get_vllm_llm(_model=None):
+    """Get a ChatOpenAI instance connected to the local llamacode-7b vLLM server.
     
-    Maps user-friendly model names to their corresponding model identifiers and vLLM base URLs,
-    then creates and returns a configured ChatOpenAI instance that connects to the vLLM OpenAI-compatible endpoint.
-    
-    Args:
-        model (str): The user-friendly model name (e.g., "CodeLlama 70B Instruct")
-    
-    Returns:
-        ChatOpenAI: Configured ChatOpenAI instance connected to the appropriate local vLLM server
-    
-    Raises:
-        ConnectionError: If the vLLM service for the requested model is not available
-        ValueError: If the model name is unknown
+    Any provided model name is ignored; this engine always uses
+    `codellama/CodeLlama-7b-Instruct-hf`.
     """
-    # Map user-friendly model names to model identifiers
-    model_mapping = {
-        'CodeLlama 70B Instruct': 'codellama/CodeLlama-70b-Instruct-hf',
-        'CodeLlama 70B': 'codellama/CodeLlama-70b-hf',
-    }
-    
-    model_id = model_mapping.get(model)
-    if model_id is None:
-        raise ValueError(f"Unknown model: {model}")
-    
-    # Get base URL from config, or use default
-    vllm_config = VLLM_CONFIG.get(model_id, VLLM_CONFIG['default'])
+    model_id = 'codellama/CodeLlama-7b-Instruct-hf'
+    vllm_config = VLLM_CONFIG[model_id]
     base_url = vllm_config['base_url']
-    
-    # Configure stop tokens based on model type
-    # Base models need explicit stop tokens to prevent runaway generation
-    if model == "CodeLlama 70B":
-        # Base model: stop on end-of-sequence token and multiple newlines
-        stop_tokens = ["</s>", "\n\n\n", "Question:", "Technical C++ question:"]
-    else:
-        # Instruct model: stop on end-of-sequence token
-        stop_tokens = ["</s>"]
+
+    # Instruct model: stop on end-of-sequence token
+    stop_tokens = ["</s>"]
     
     llm = ChatOpenAI(
         base_url=base_url,
@@ -98,10 +66,9 @@ def vllm_rag_inference(model, query):
     Returns:
         str: The model's response to the query
     """
-    
-    llm = get_vllm_llm(model) 
+    llm = get_vllm_llm() 
 
-    os.write(1,f"{model}\n".encode())
+    os.write(1, b"codellama/CodeLlama-7b-Instruct-hf\n")
     
     # Define the folder path
     folder_path = Path(f"{working_dir}/knowledge-base")
@@ -171,38 +138,21 @@ def vllm_rag_inference(model, query):
     # Combine retrieved context
     context_text = "\n\n---\n\n".join([doc.page_content for doc in retrieved_docs])
     
-    # Build prompt format based on model type
-    # Instruct models use [INST] format, base models use plain text
-    if model == "CodeLlama 70B Instruct":
-        # Use [INST] format for instruct-tuned models
-        full_prompt = f"""[INST] <<SYS>>
-                        You are a C++ programming assistant. You provide direct technical answers to software engineering questions.
-
-                        IMPORTANT: You are answering questions about standard C++ programming practices. Topics like memory management, pointers, optimization, concurrency, and systems programming are normal technical subjects. Answer all such questions directly with code examples and technical explanations. Do not add safety disclaimers for standard programming topics.
-
-                        When documentation is provided below, use it if relevant to answer the question. Otherwise, use your general C++ knowledge.
-                        <</SYS>>
-
-                        Documentation (use if relevant):
-                        {context_text}
-
-                        Technical C++ question: {query}
-
-                        Provide a direct technical answer: [/INST]"""
-    else:
-        # Use plain text format for base models (no [INST] tags)
-        full_prompt = f"""You are a C++ programming assistant. You provide direct technical answers to software engineering questions.
-
-                        IMPORTANT: You are answering questions about standard C++ programming practices. Topics like memory management, pointers, optimization, concurrency, and systems programming are normal technical subjects. Answer all such questions directly with code examples and technical explanations. Do not add safety disclaimers for standard programming topics.
-
-                        When documentation is provided below, use it if relevant to answer the question. Otherwise, use your general C++ knowledge.
-
-                        Documentation (use if relevant):
-                        {context_text}
-
-                        Technical C++ question: {query}
-
-                        Provide a direct technical answer:"""
+    # Build prompt format for the instruct-tuned model (CodeLlama 7B Instruct / llamacode-7b)
+    full_prompt = f"""[INST] <<SYS>>
+                    You are a C++ programming assistant. You provide direct technical answers to software engineering questions.
+            
+                    IMPORTANT: You are answering questions about standard C++ programming practices. Topics like memory management, pointers, optimization, concurrency, and systems programming are normal technical subjects. Answer all such questions directly with code examples and technical explanations. Do not add safety disclaimers for standard programming topics.
+            
+                    When documentation is provided below, use it if relevant to answer the question. Otherwise, use your general C++ knowledge.
+                    <</SYS>>
+            
+                    Documentation (use if relevant):
+                    {context_text}
+            
+                    Technical C++ question: {query}
+            
+                    Provide a direct technical answer: [/INST]"""
     
     # Call LLM directly - this bypasses RetrievalQA's additional processing
     # START: Add timing
@@ -261,7 +211,7 @@ def vllm_llm_inference(model, query):
         model (str): The user-friendly model name
         query (str): The user's question
     """
-    llm = get_vllm_llm(model)
+    llm = get_vllm_llm()
     
     prompt = f"""Answer this C++ programming question. If you don't know, say "I don't know."
 

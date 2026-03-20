@@ -79,10 +79,10 @@ with gr.Blocks(title="AI Coding Assistant") as demo:
     with gr.Row():
         model_dropdown = gr.Dropdown(
             choices=[
-                "CodeLlama 70B Instruct",
-                "CodeLlama 70B",
+                "llamacode-7b (Instruct)",
+                "llamacode-7b (Base)",
             ],
-            value="CodeLlama 70B Instruct",
+            value="llamacode-7b (Instruct)",
             label="Select Model",
             info="Choose the LLM model (ensure the vLLM service is running)",
         )
