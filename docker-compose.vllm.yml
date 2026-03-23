@@ -1,62 +1,31 @@
 version: '3.8'
 
 services:
-  # llamacode-7b (CodeLlama 7B Instruct) - Port 8000
-  llamacode-7b-instruct:
+  nemotron-3-nano:
     image: vllm/vllm-openai:latest
-    container_name: vllm-llamacode-7b-instruct
+    container_name: vllm-nemotron-3-nano
     ports:
       - "8000:8000"
     volumes:
       - ~/.cache/huggingface:/root/.cache/huggingface
     environment:
       - HF_TOKEN=${HF_TOKEN}
-      - CUDA_VISIBLE_DEVICES=0,1,2,3  # Docker maps assigned GPUs to 0-3
     command: >
-      --model codellama/CodeLlama-7b-Instruct-hf
+      --model nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16
       --port 8000
-      --tensor-parallel-size 4
-      --max-model-len 2048
-      --gpu-memory-utilization 0.55
-      --dtype auto
+      --tensor-parallel-size 8
       --trust-remote-code
+      --gpu-memory-utilization 0.9
+      --max-model-len 65536
+      --dtype auto
+      --async-scheduling
+      --kv-cache-dtype auto
     deploy:
       resources:
         reservations:
           devices:
             - driver: nvidia
-              device_ids: ['0', '1', '2', '3']
-              capabilities: [gpu]
-    restart: unless-stopped
-    ipc: host
-
-  # llamacode-7b (CodeLlama 7B base model, not instruct) - Port 8001
-  llamacode-7b:
-    image: vllm/vllm-openai:latest
-    container_name: vllm-llamacode-7b
-    ports:
-      - "8001:8000"
-    volumes:
-      - ~/.cache/huggingface:/root/.cache/huggingface
-      - ./chat_template.jinja:/root/.cache/huggingface/chat_template.jinja:ro
-    environment:
-      - HF_TOKEN=${HF_TOKEN}
-      - CUDA_VISIBLE_DEVICES=0,1,2,3  # Docker maps assigned GPUs to 0-3
-    command: >
-      --model codellama/CodeLlama-7b-hf
-      --port 8000
-      --tensor-parallel-size 4
-      --max-model-len 2048
-      --gpu-memory-utilization 0.55
-      --dtype auto
-      --trust-remote-code
-      --chat-template /root/.cache/huggingface/chat_template.jinja
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              device_ids: ['4', '5', '6', '7']
+              count: all
               capabilities: [gpu]
     restart: unless-stopped
     ipc: host

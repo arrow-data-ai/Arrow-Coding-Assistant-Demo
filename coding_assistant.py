@@ -75,16 +75,12 @@ with gr.Blocks(title="AI Coding Assistant") as demo:
     # RAG diagram on top
     gr.Image("rag_diagram.png", show_label=False)
     
-    # Model selection and RAG toggle
+    # Model display and RAG toggle
     with gr.Row():
-        model_dropdown = gr.Dropdown(
-            choices=[
-                "llamacode-7b (Instruct)",
-                "llamacode-7b (Base)",
-            ],
-            value="llamacode-7b (Instruct)",
-            label="Select Model",
-            info="Choose the LLM model (ensure the vLLM service is running)",
+        model_name = gr.Textbox(
+            value="Nemotron-3 Nano 30B",
+            label="Model",
+            interactive=False,
         )
         
         # Toggle switch to choose between RAG and non‑RAG modes
@@ -95,7 +91,7 @@ with gr.Blocks(title="AI Coding Assistant") as demo:
         )
     
     # Demo Prompts Panel - Easy copy-paste access
-    with gr.Accordion("📋 Demo Prompts", open=False):
+    with gr.Accordion("📋 Migration Demo Prompts", open=False):
         
         # Use prompts in the order they appear in demo_prompts.py
         demo_prompt_dropdown = gr.Dropdown(
@@ -121,18 +117,19 @@ with gr.Blocks(title="AI Coding Assistant") as demo:
             outputs=[demo_prompt_display]
         )
         
-        gr.Markdown("💡 **Tip:** The prompt is displayed above - just hit the copy button to paste into chat.")
+        gr.Markdown("💡 **Tip:** Select a prompt, copy it, and paste into chat. Try with RAG on and off to see the difference.")
     
     # ChatInterface with streaming echo functionality
     chat_interface = gr.ChatInterface(
         fn=coding_assistant_streaming,
-        additional_inputs=[rag_toggle, model_dropdown],
+        additional_inputs=[rag_toggle, model_name],
         title=None,
+        type="messages",
     )
     
     # Display retrieved sources (only shown when RAG is enabled)
     with gr.Accordion("📚 Retrieved Sources", open=False):
-        sources_display = gr.Markdown("No sources retrieved yet. Ask a question with RAG enabled to see source files.")
+        sources_display = gr.Markdown("No sources retrieved yet. Ask a migration question with RAG enabled to see retrieved monolith code and pattern docs.")
         
         def update_sources_display(rag_enabled):
             """Update the sources display with the last retrieved documents.
@@ -145,7 +142,7 @@ with gr.Blocks(title="AI Coding Assistant") as demo:
             
             sources = get_retrieved_sources()
             if not sources:
-                return "No sources retrieved yet. Ask a question with RAG enabled to see source files."
+                return "No sources retrieved yet. Ask a migration question with RAG enabled to see retrieved monolith code and pattern docs."
             
             markdown = "### Source Files:\n\n"
             for i, (filename, preview) in enumerate(sources, 1):

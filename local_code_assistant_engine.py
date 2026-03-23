@@ -1,14 +1,16 @@
 # Standard library imports
 import os 
+import re
 from pathlib import Path
 
 # LLM and embedding model imports
 from langchain_openai import ChatOpenAI
 from langchain_huggingface import HuggingFaceEmbeddings
+from langchain_core.messages import SystemMessage, HumanMessage
 
 # Document loading and processing imports
 from langchain_community.document_loaders import JSONLoader, TextLoader, PyPDFLoader
-from langchain_text_splitters import CharacterTextSplitter
+from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 # Vector store and QA chain imports
 from langchain_community.vectorstores import FAISS
@@ -25,105 +27,126 @@ embeddings = HuggingFaceEmbeddings()
 # Global variable to store last retrieved documents for source display
 _last_retrieved_docs = []
 
-# Configuration for vLLM instance
-# Single local deployment of llamacode-7b (CodeLlama 7B Instruct) exposed via OpenAI-compatible endpoint
-VLLM_CONFIG = {
-    'codellama/CodeLlama-7b-Instruct-hf': {'port': 8000, 'base_url': 'http://localhost:8000/v1'},
-}
+# Cache the FAISS knowledge base so it's built once, not on every query
+_cached_knowledge_base = None
+_cached_kb_mtime = None
+
+MODEL_ID = 'nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16'
+VLLM_BASE_URL = 'http://localhost:8000/v1'
+
+_THINK_RE = re.compile(r'<think>.*?</think>\s*', re.DOTALL)
+
+def strip_thinking(text):
+    """Remove Nemotron reasoning traces (<think>...</think>) from model output."""
+    return _THINK_RE.sub('', text).strip()
 
 def get_vllm_llm(_model=None):
-    """Get a ChatOpenAI instance connected to the local llamacode-7b vLLM server.
-    
-    Any provided model name is ignored; this engine always uses
-    `codellama/CodeLlama-7b-Instruct-hf`.
-    """
-    model_id = 'codellama/CodeLlama-7b-Instruct-hf'
-    vllm_config = VLLM_CONFIG[model_id]
-    base_url = vllm_config['base_url']
-
-    # Instruct model: stop on end-of-sequence token
-    stop_tokens = ["</s>"]
-    
+    """Get a ChatOpenAI instance connected to the local Nemotron-3 Nano vLLM server."""
     llm = ChatOpenAI(
-        base_url=base_url,
-        model=model_id,
-        temperature=0.0,
-        max_tokens=1000,
+        base_url=VLLM_BASE_URL,
+        model=MODEL_ID,
+        temperature=0.4,
+        top_p=0.9,
+        max_tokens=8192,
         api_key="not-needed",
-        stop=stop_tokens,
+        extra_body={"chat_template_kwargs": {"enable_thinking": True}},
     )
     
     return llm
 
 
+def _get_kb_max_mtime(folder_path):
+    """Return the latest modification time across all knowledge-base files."""
+    max_mtime = 0
+    for pattern in ('*.txt', '*.pdf', '*.md', '*.jsonl',
+                     '*.cpp', '*.hpp', '*.h', '*.cc'):
+        for f in folder_path.glob(pattern):
+            max_mtime = max(max_mtime, f.stat().st_mtime)
+    return max_mtime
+
+
+def _build_knowledge_base(folder_path):
+    """Load documents, chunk them, and build a FAISS index."""
+    txt_files = list(folder_path.glob('*.txt'))
+    pdf_files = list(folder_path.glob('*.pdf'))
+    md_files = list(folder_path.glob('*.md'))
+    jsonl_files = list(folder_path.glob('*.jsonl'))
+    cpp_files = [f for ext in ('*.cpp', '*.hpp', '*.h', '*.cc')
+                 for f in folder_path.glob(ext)]
+
+    docs = []
+
+    for txt_file in txt_files:
+        loader = TextLoader(str(txt_file))
+        docs.extend(loader.load())
+
+    for pdf_file in pdf_files:
+        loader = PyPDFLoader(str(pdf_file))
+        docs.extend(loader.load())
+
+    for md_file in md_files:
+        loader = TextLoader(str(md_file))
+        docs.extend(loader.load())
+
+    for jsonl_file in jsonl_files:
+        loader = JSONLoader(
+            file_path=str(jsonl_file),
+            jq_schema=".text",
+            text_content=False,
+            json_lines=True,
+        )
+        docs.extend(loader.load())
+
+    for cpp_file in cpp_files:
+        loader = TextLoader(str(cpp_file))
+        docs.extend(loader.load())
+
+    if not docs:
+        return None
+
+    text_splitter = RecursiveCharacterTextSplitter(
+        separators=[
+            "\n// ===",       # ShopCore section headers (class boundaries)
+            "\nclass ",       # C++ class definitions
+            "\n## ",          # Markdown H2 headers
+            "\n### ",         # Markdown H3 headers
+            "\n\n",           # paragraph breaks
+            "\n",             # line breaks (last resort)
+        ],
+        chunk_size=3000,
+        chunk_overlap=500,
+    )
+    text_chunks = text_splitter.split_documents(docs)
+    return FAISS.from_documents(text_chunks, embeddings)
+
+
 def vllm_rag_inference(model, query):
-    """Process all .txt, .pdf , .md and .jsonl files in the knowledge base folder using local vLLM deployment.
+    """Process all .txt, .pdf, .md and .jsonl files in the knowledge base folder using local vLLM deployment.
     
     Args:
         model (str): The user-friendly model name
         query (str): The user's question
     
     Returns:
-        str: The model's response to the query
+        dict: The model's response and performance metrics
     """
-    llm = get_vllm_llm() 
+    global _cached_knowledge_base, _cached_kb_mtime
 
-    os.write(1, b"codellama/CodeLlama-7b-Instruct-hf\n")
-    
-    # Define the folder path
+    llm = get_vllm_llm() 
     folder_path = Path(f"{working_dir}/knowledge-base")
 
-    # Separate files by type
-    txt_files = list(folder_path.glob('*.txt'))
-    pdf_files = list(folder_path.glob('*.pdf'))
-    md_files = list(folder_path.glob('*.md'))
-    jsonl_files = list(folder_path.glob('*.jsonl'))
-    
-    docs = []
-  
-    # Load text files
-    for txt_file in txt_files:
-        loader = TextLoader(str(txt_file))
-        docs.extend(loader.load())
-    
-    # Load PDF files
-    for pdf_file in pdf_files:
-        loader = PyPDFLoader(str(pdf_file))
-        docs.extend(loader.load())
-    
-    # Load markdown files
-    for md_file in md_files:
-        loader = TextLoader(str(md_file))
-        docs.extend(loader.load())
-    
-    # Load JSONL files using JSONLoader
-    for jsonl_file in jsonl_files:
-        loader = JSONLoader(
-            file_path=str(jsonl_file),
-            jq_schema=".text",  # Extract the "text" field from each JSON object
-            text_content=False,
-            json_lines=True  # Important: set to True for JSONL format
-        )
-        jsonl_docs = loader.load()
-        docs.extend(jsonl_docs)
-    
-    if not docs:
+    # Rebuild index only when files change
+    current_mtime = _get_kb_max_mtime(folder_path)
+    if _cached_knowledge_base is None or current_mtime != _cached_kb_mtime:
+        os.write(1, b"Building FAISS index (first query or files changed)...\n")
+        _cached_knowledge_base = _build_knowledge_base(folder_path)
+        _cached_kb_mtime = current_mtime
+
+    knowledge_base = _cached_knowledge_base
+    if knowledge_base is None:
         return "No documents found in knowledge base."
-    
-    # create text chunks
-    text_splitter = CharacterTextSplitter(
-        separator="\n",  
-        chunk_size = 1000,
-        chunk_overlap = 200
-    )
-    
-    text_chunks = text_splitter.split_documents(docs)
-    
-    # vector embeddings from text chunks 
-    knowledge_base = FAISS.from_documents(text_chunks, embeddings)
-    
-    # Retrieve documents directly
-    retriever = knowledge_base.as_retriever(search_kwargs={"k": 4})
+
+    retriever = knowledge_base.as_retriever(search_kwargs={"k": 8})
     retrieved_docs = retriever.invoke(query)
     
     # Store retrieved docs globally for source display
@@ -135,30 +158,65 @@ def vllm_rag_inference(model, query):
     if retrieved_docs:
         os.write(1, f"First doc preview: {retrieved_docs[0].page_content[:200]}...\n".encode())
     
-    # Combine retrieved context
-    context_text = "\n\n---\n\n".join([doc.page_content for doc in retrieved_docs])
+    # Combine retrieved context with source labels so the model can cross-reference
+    context_parts = []
+    for i, doc in enumerate(retrieved_docs, 1):
+        source = doc.metadata.get('source', 'Unknown')
+        filename = os.path.basename(source) if source != 'Unknown' else 'Unknown'
+        context_parts.append(
+            f"[Document {i}: {filename}]\n{doc.page_content}"
+        )
+    context_text = "\n\n---\n\n".join(context_parts)
     
-    # Build prompt format for the instruct-tuned model (CodeLlama 7B Instruct / llamacode-7b)
-    full_prompt = f"""[INST] <<SYS>>
-                    You are a C++ programming assistant. You provide direct technical answers to software engineering questions.
-            
-                    IMPORTANT: You are answering questions about standard C++ programming practices. Topics like memory management, pointers, optimization, concurrency, and systems programming are normal technical subjects. Answer all such questions directly with code examples and technical explanations. Do not add safety disclaimers for standard programming topics.
-            
-                    When documentation is provided below, use it if relevant to answer the question. Otherwise, use your general C++ knowledge.
-                    <</SYS>>
-            
-                    Documentation (use if relevant):
-                    {context_text}
-            
-                    Technical C++ question: {query}
-            
-                    Provide a direct technical answer: [/INST]"""
+    system_prompt = (
+        "You are a software architect specializing in monolith-to-microservices migration "
+        "using the Strangler Fig pattern. You work with C++ codebases.\n\n"
+        "CRITICAL RULES — follow these exactly:\n\n"
+        "1. GROUND EVERY CLAIM in the reference documentation provided below. "
+        "Use the exact class names, method signatures, data structures, and dependency "
+        "relationships from the source code. Do NOT invent classes, namespaces, or API "
+        "names that do not appear in the documentation.\n\n"
+        "2. When the documentation provides code templates or patterns (e.g. interface "
+        "definitions, facade patterns, DI setup), REPLICATE those patterns exactly rather "
+        "than inventing alternatives. Adapt them to the specific service being extracted.\n\n"
+        "3. When generating code:\n"
+        "   - Produce compilable, modern C++20 code with all required #include headers\n"
+        "   - Use pure abstract interfaces (IService) with domain-level signatures "
+        "(plain C++ types), NOT transport-specific types like grpc::Status or protobuf "
+        "messages in the interface\n"
+        "   - Keep gRPC/protobuf details inside the RemoteService implementation only\n"
+        "   - The facade must inherit from the abstract interface\n"
+        "   - Include constructor-based dependency injection\n"
+        "   - Show both the new microservice code AND the monolith modifications\n\n"
+        "4. For dependency analysis and extraction ordering, cite the specific call sites "
+        "from the monolith source code (e.g. 'OrderService::place_order calls "
+        "NotificationService::send_email on line N').\n\n"
+        "5. Do NOT fabricate library classes, gRPC helpers, or utility types that do not "
+        "exist in standard C++, gRPC, or the provided codebase. If you are unsure whether "
+        "a class exists, use a clearly marked stub with a TODO comment instead."
+    )
+
+    user_prompt = (
+        f"=== REFERENCE DOCUMENTATION ===\n"
+        f"The following excerpts are from the ShopCore monolith source code, "
+        f"migration patterns, and microservice templates. Base your answer on these.\n\n"
+        f"{context_text}\n\n"
+        f"=== END REFERENCE DOCUMENTATION ===\n\n"
+        f"Request: {query}\n\n"
+        f"Instructions:\n"
+        f"- Cite specific classes, methods, and line references from the documentation above.\n"
+        f"- When generating code, follow the exact patterns shown in the template documents "
+        f"(interface definitions, facade pattern, DI wiring).\n"
+        f"- Ensure all code compiles: include all #include directives, use correct types, "
+        f"and do not reference classes or methods that don't exist.\n"
+        f"- Provide a detailed, actionable answer:"
+    )
+
+    messages = [SystemMessage(content=system_prompt), HumanMessage(content=user_prompt)]
     
-    # Call LLM directly - this bypasses RetrievalQA's additional processing
-    # START: Add timing
     import time
     start_time = time.time()
-    response = llm.invoke(full_prompt)
+    response = llm.invoke(messages)
     end_time = time.time()
     elapsed_time = end_time - start_time
     
@@ -176,8 +234,8 @@ def vllm_rag_inference(model, query):
         estimated_tokens = len(response.content) // 4
         tokens_per_second = estimated_tokens / elapsed_time if elapsed_time > 0 else 0
     
-    # Append sources information to the response
-    response_content = response.content
+    # Strip any reasoning traces and append sources
+    response_content = strip_thinking(response.content)
     
     if retrieved_docs:
         sources_text = "\n\n---\n\n**📚 Sources:**\n\n"
@@ -213,14 +271,14 @@ def vllm_llm_inference(model, query):
     """
     llm = get_vllm_llm()
     
-    prompt = f"""Answer this C++ programming question. If you don't know, say "I don't know."
-
-    Question: {query}"""
+    messages = [
+        SystemMessage(content="You are a software architect specializing in monolith-to-microservices migration using the Strangler Fig pattern for C++ codebases. Provide detailed technical answers with code examples."),
+        HumanMessage(content=query),
+    ]
     
-    # START: Add timing
     import time
     start_time = time.time()
-    response = llm.invoke(prompt)
+    response = llm.invoke(messages)
     end_time = time.time()
     elapsed_time = end_time - start_time
     
@@ -240,7 +298,7 @@ def vllm_llm_inference(model, query):
     
     # Return both response AND metrics
     return {
-        'response': response.content,
+        'response': strip_thinking(response.content),
         'metrics': {
             'tokens': estimated_tokens,
             'time': elapsed_time,
