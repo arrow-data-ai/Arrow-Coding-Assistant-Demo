@@ -53,4 +53,5 @@ Thumbs.db
 .env
 .venv/
 .vscode/
-.gradio/   
+.gradio/
+.cursor/

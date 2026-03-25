@@ -8,7 +8,6 @@ from local_code_assistant_engine import (
     get_retrieved_sources,
     clear_retrieved_sources
 )
-from demo_prompts import DEMO_PROMPTS
 
 
 def coding_assistant_streaming(message, history, rag_toggle, selected_model):
@@ -37,7 +36,7 @@ def coding_assistant_streaming(message, history, rag_toggle, selected_model):
         
         # Stream the response character by character for visual effect
         for i in range(len(full_response)):
-            time.sleep(0.01)
+            time.sleep(0.0001)
             yield full_response[:i+1]
         
         # AFTER streaming completes, append metrics
@@ -49,7 +48,7 @@ def coding_assistant_streaming(message, history, rag_toggle, selected_model):
 
 
 # Create the demo
-with gr.Blocks(title="AI Coding Assistant") as demo:
+with gr.Blocks(title="AI Coding Assistant", fill_height=True) as demo:
     # Custom CSS 
     gr.HTML(
         """
@@ -60,6 +59,15 @@ with gr.Blocks(title="AI Coding Assistant") as demo:
             line-height: 1.2 !important;
             padding-top: 20px !important;
             text-align: center !important;
+        }
+        #chatbot-container .chatbot {
+            min-height: 600px !important;
+            height: auto !important;
+            max-height: none !important;
+            overflow: visible !important;
+        }
+        .controls-row {
+            align-items: end !important;
         }
         </style>
         """
@@ -76,7 +84,7 @@ with gr.Blocks(title="AI Coding Assistant") as demo:
     gr.Image("rag_diagram.png", show_label=False)
     
     # Model display and RAG toggle
-    with gr.Row():
+    with gr.Row(elem_classes=["controls-row"]):
         model_name = gr.Textbox(
             value="Nemotron-3 Nano 30B",
             label="Model",
@@ -90,43 +98,16 @@ with gr.Blocks(title="AI Coding Assistant") as demo:
             interactive=True,
         )
     
-    # Demo Prompts Panel - Easy copy-paste access
-    with gr.Accordion("📋 Migration Demo Prompts", open=False):
-        
-        # Use prompts in the order they appear in demo_prompts.py
-        demo_prompt_dropdown = gr.Dropdown(
-            choices=[(v['title'], k) for k, v in DEMO_PROMPTS.items()],
-            label="Select Demo Prompt",
+    # ChatInterface
+    with gr.Column(elem_id="chatbot-container"):
+        chat_interface = gr.ChatInterface(
+            fn=coding_assistant_streaming,
+            additional_inputs=[rag_toggle, model_name],
+            title=None,
+            type="messages",
+            chatbot=gr.Chatbot(height=None, type="messages", allow_tags=False, show_copy_button=True),
         )
-        demo_prompt_display = gr.Markdown()
-        
-        def update_prompt_display(prompt_key):
-            """Update the prompt display when a prompt is selected."""
-            if not prompt_key or prompt_key not in DEMO_PROMPTS:
-                return ""
-            
-            prompt_data = DEMO_PROMPTS[prompt_key]
-            prompt_text = prompt_data['prompt']
-            # Format as markdown code block to get automatic copy button like in Chatbot
-            formatted_prompt = f"```\n{prompt_text}\n```"
-            return formatted_prompt
-        
-        demo_prompt_dropdown.change(
-            fn=update_prompt_display,
-            inputs=[demo_prompt_dropdown],
-            outputs=[demo_prompt_display]
-        )
-        
-        gr.Markdown("💡 **Tip:** Select a prompt, copy it, and paste into chat. Try with RAG on and off to see the difference.")
-    
-    # ChatInterface with streaming echo functionality
-    chat_interface = gr.ChatInterface(
-        fn=coding_assistant_streaming,
-        additional_inputs=[rag_toggle, model_name],
-        title=None,
-        type="messages",
-    )
-    
+
     # Display retrieved sources (only shown when RAG is enabled)
     with gr.Accordion("📚 Retrieved Sources", open=False):
         sources_display = gr.Markdown("No sources retrieved yet. Ask a migration question with RAG enabled to see retrieved monolith code and pattern docs.")
