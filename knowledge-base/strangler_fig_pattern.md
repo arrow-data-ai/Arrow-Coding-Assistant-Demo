@@ -96,38 +96,62 @@ The monolith publishes events (e.g., "OrderPlaced") to a message broker. The new
 ### API Gateway
 A dedicated gateway (e.g., Kong, Envoy, or custom) that manages routing, authentication, rate limiting, and load balancing across the monolith and microservices.
 
-## C++ Specific Considerations
+## .NET / Blazor Specific Considerations
 
-- Use gRPC for inter-service communication (protobuf gives strong typing)
-- Each service should be a separate CMake project / build target
-- Use `std::async` or a thread pool for non-blocking service calls from the monolith during transition
-- Define service interfaces as pure abstract classes (interface segregation) before extracting
-- Use dependency injection to swap between local (in-monolith) and remote (microservice) implementations
+- Use REST APIs or gRPC for inter-service communication between ASP.NET services
+- Each microservice should be a separate .csproj / solution with its own `Program.cs` and startup configuration
+- Use `HttpClient` (via `IHttpClientFactory`) or a typed client for non-blocking service calls from the monolith during transition
+- Define service contracts as C# interfaces (e.g., `INotificationService`) before extracting — this enables swapping between local and remote implementations
+- Use ASP.NET Core's built-in dependency injection to register either the in-monolith implementation or the remote HTTP/gRPC client
+- Use the Options pattern (`IOptions<T>`) and feature flags to toggle between monolith and microservice implementations at runtime
+- Blazor/Razor components should depend on service interfaces, not concrete implementations, so the UI layer is unaffected by backend extraction
 
 ## Key Data Structures for the Facade
 
 The anti-corruption layer should translate between monolith internal types and service API types:
 
-```cpp
-// Monolith uses internal struct
-struct Notification {
-    int user_id;
-    std::string type;
-    std::string subject;
-    std::string body;
-};
+```csharp
+// Monolith uses internal model
+public class Notification
+{
+    public int UserId { get; set; }
+    public string Type { get; set; }
+    public string Subject { get; set; }
+    public string Body { get; set; }
+}
 
-// New service uses a DTO / protobuf message
-// NotificationRequest {
-//   string recipient_id = 1;
-//   string channel = 2;       // "email", "sms", "push"
-//   string title = 3;
-//   string content = 4;
-// }
+// Service interface — shared contract
+public interface INotificationService
+{
+    Task SendAsync(NotificationRequest request);
+}
+
+// New microservice uses a DTO
+public class NotificationRequest
+{
+    public string RecipientId { get; set; }
+    public string Channel { get; set; }   // "email", "sms", "push"
+    public string Title { get; set; }
+    public string Content { get; set; }
+}
 
 // The facade translates between them:
-// NotificationFacade::send(Notification n) {
-//   auto req = to_grpc_request(n);
-//   notification_stub_->Send(req);
-// }
+public class NotificationFacade : INotificationService
+{
+    private readonly HttpClient _httpClient;
+
+    public NotificationFacade(HttpClient httpClient)
+    {
+        _httpClient = httpClient;
+    }
+
+    public async Task SendAsync(NotificationRequest request)
+    {
+        await _httpClient.PostAsJsonAsync("/api/notifications", request);
+    }
+}
+
+// DI registration — swap implementations without changing consuming code:
+// services.AddScoped<INotificationService, NotificationFacade>();       // remote
+// services.AddScoped<INotificationService, LocalNotificationService>(); // monolith
 ```
