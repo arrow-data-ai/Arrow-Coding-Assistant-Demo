@@ -13,3 +13,4 @@ vllm
 tiktoken
 transformers
 requests
+python-dotenv

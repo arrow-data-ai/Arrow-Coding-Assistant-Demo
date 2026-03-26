@@ -1,5 +1,5 @@
 import gradio as gr
-from gradio_toggle import Toggle
+from gradio_toggle import Toggle  # pyright: ignore[reportMissingImports]
 import time
 
 from local_code_assistant_engine import (
@@ -126,8 +126,8 @@ with gr.Blocks(title="AI Coding Assistant", fill_height=True) as demo:
                 return "No sources retrieved yet. Ask a migration question with RAG enabled to see retrieved monolith code and pattern docs."
             
             markdown = "### Source Files:\n\n"
-            for i, (filename, preview) in enumerate(sources, 1):
-                markdown += f"**{i}. {filename}**\n\n"
+            for i, (path, preview) in enumerate(sources, 1):
+                markdown += f"**{i}. `{path}`**\n\n"
                 markdown += f"```\n{preview}\n```\n\n"
                 markdown += "---\n\n"
             return markdown

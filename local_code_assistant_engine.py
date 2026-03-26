@@ -1,7 +1,10 @@
 # Standard library imports
 import os 
 import re
+import time
+from collections import Counter
 from pathlib import Path
+
 
 # LLM and embedding model imports
 from langchain_openai import ChatOpenAI
@@ -16,7 +19,6 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.vectorstores import FAISS
 from langchain_classic.chains import RetrievalQA
 from langchain_core.prompts import PromptTemplate
-
 
 # Get the current working directory
 working_dir = os.path.dirname(os.path.abspath(__file__))
@@ -40,18 +42,19 @@ def strip_thinking(text):
     """Remove Nemotron reasoning traces (<think>...</think>) from model output."""
     return _THINK_RE.sub('', text).strip()
 
+
 def get_vllm_llm(_model=None):
     """Get a ChatOpenAI instance connected to the local Nemotron-3 Nano vLLM server."""
     llm = ChatOpenAI(
         base_url=VLLM_BASE_URL,
         model=MODEL_ID,
-        temperature=0.4,
+        temperature=0.1,
         top_p=0.9,
         max_tokens=8192,
         api_key="not-needed",
         extra_body={"chat_template_kwargs": {"enable_thinking": True}},
     )
-    
+
     return llm
 
 
@@ -113,11 +116,25 @@ def _build_knowledge_base(folder_path):
             "\n\n",           # paragraph breaks
             "\n",             # line breaks (last resort)
         ],
-        chunk_size=3000,
-        chunk_overlap=500,
+        chunk_size=2000,
+        chunk_overlap=400,
     )
     text_chunks = text_splitter.split_documents(docs)
     return FAISS.from_documents(text_chunks, embeddings)
+
+
+def _kb_relative_path(source: str, kb_root: Path) -> str:
+    """Path under knowledge-base for labels; basename if outside kb_root."""
+    if not source or source == "Unknown":
+        return "Unknown"
+    try:
+        p = Path(source).resolve()
+        root = kb_root.resolve()
+        rel = p.relative_to(root)
+        return rel.as_posix()
+    except (ValueError, OSError, RuntimeError):
+        return Path(source).name
+
 
 
 def vllm_rag_inference(model, query):
@@ -132,7 +149,7 @@ def vllm_rag_inference(model, query):
     """
     global _cached_knowledge_base, _cached_kb_mtime
 
-    llm = get_vllm_llm() 
+    llm = get_vllm_llm()
     folder_path = Path(f"{working_dir}/knowledge-base")
 
     # Rebuild index only when files change
@@ -146,7 +163,7 @@ def vllm_rag_inference(model, query):
     if knowledge_base is None:
         return "No documents found in knowledge base."
 
-    retriever = knowledge_base.as_retriever(search_kwargs={"k": 8})
+    retriever = knowledge_base.as_retriever(search_kwargs={"k": 35}) # top k 
     retrieved_docs = retriever.invoke(query)
     
     # Store retrieved docs globally for source display
@@ -158,62 +175,72 @@ def vllm_rag_inference(model, query):
     if retrieved_docs:
         os.write(1, f"First doc preview: {retrieved_docs[0].page_content[:200]}...\n".encode())
     
-    # Combine retrieved context with source labels so the model can cross-reference
+    # Labels: KB-relative path + part k/n when the same file appears in multiple chunks
+    rel_paths = [
+        _kb_relative_path(doc.metadata.get("source", "Unknown"), folder_path)
+        for doc in retrieved_docs
+    ]
+    per_file_total = Counter(rel_paths)
+    per_file_seen = {}
     context_parts = []
     for i, doc in enumerate(retrieved_docs, 1):
-        source = doc.metadata.get('source', 'Unknown')
-        filename = os.path.basename(source) if source != 'Unknown' else 'Unknown'
+        rel = rel_paths[i - 1]
+        per_file_seen[rel] = per_file_seen.get(rel, 0) + 1
+        part_n = per_file_seen[rel]
+        total = per_file_total[rel]
+        part_suffix = f" — part {part_n}/{total}" if total > 1 else ""
         context_parts.append(
-            f"[Document {i}: {filename}]\n{doc.page_content}"
+            f"[Excerpt {i}: `{rel}`{part_suffix}]\n{doc.page_content}"
         )
-    context_text = "\n\n---\n\n".join(context_parts)
+    unique_paths = sorted({p for p in rel_paths if p != "Unknown"})
+    files_preamble = (
+        "**Files in this context (only these paths were retrieved for this question):**\n"
+        + "\n".join(f"- `{p}`" for p in unique_paths)
+        if unique_paths
+        else "**Files in this context:** _(no labeled paths)_"
+    )
+    context_text = (
+        files_preamble + "\n\n---\n\n" + "\n\n---\n\n".join(context_parts)
+    )
     
     system_prompt = (
-        "You are a software architect specializing in monolith-to-microservices migration "
-        "using the Strangler Fig pattern. You work with codebases that include C#, "
-        "ASP.NET, Blazor/Razor, TypeScript, JavaScript, SQL, PowerShell, and related "
-        "technologies.\n\n"
-        "CRITICAL RULES — follow these exactly:\n\n"
-        "1. GROUND EVERY CLAIM in the reference documentation provided below. "
-        "Use the exact class names, method signatures, data structures, and dependency "
-        "relationships from the source code. Do NOT invent classes, namespaces, or API "
-        "names that do not appear in the documentation.\n\n"
-        "2. When the documentation provides code templates or patterns (e.g. interface "
-        "definitions, facade patterns, DI setup), REPLICATE those patterns exactly rather "
-        "than inventing alternatives. Adapt them to the specific service being extracted.\n\n"
-        "3. When generating code:\n"
-        "   - Produce correct, idiomatic code in the appropriate language (C#, TypeScript, "
-        "SQL, etc.) with all necessary using directives and imports\n"
-        "   - Use clean interfaces (IService) with domain-level signatures\n"
-        "   - Follow the existing project conventions visible in the source files\n"
-        "   - Include constructor-based dependency injection\n"
-        "   - Show both the new microservice code AND the monolith modifications\n\n"
-        "4. For dependency analysis and extraction ordering, cite the specific call sites "
-        "from the monolith source code.\n\n"
-        "5. Do NOT fabricate types, libraries, or utility classes that do not exist "
-        "in the provided codebase or standard frameworks. If you are unsure whether "
-        "something exists, use a clearly marked stub with a TODO comment instead."
+        "You are a senior architect for evolving monolithic .NET apps: separate HTTP API "
+        "(logic + data), UI that calls the API only, optional SQLite→server DB, and "
+        "practical containers/K8s (config, health, ingress). Prefer small, incremental steps. "
+        "Typical stack: C#, ASP.NET, Blazor/Razor, TypeScript/JS, SQL, PowerShell.\n\n"
+        "Rules:\n"
+        "- Base every claim on the excerpts below—names, signatures, and dependencies as "
+        "shown. No invented APIs; if unsure, use a TODO stub.\n"
+        "- Copy patterns from excerpts (layering, routing, DI). Match concrete vs interface "
+        "registration/injection exactly; do not add I* services unless they appear in context.\n"
+        "- For split/order-of-work reasoning, point to specific call sites in the excerpts.\n"
+        "- Code: idiomatic, with required usings/imports; when the user wants implementation "
+        "detail, show new pieces and how the existing app wires to them.\n"
+        "- Cite with backtick paths from excerpt headers; never excerpt numbers alone. "
+        "Only attribute behavior to files listed under \"Files in this context\"."
     )
 
     user_prompt = (
         f"=== REFERENCE DOCUMENTATION ===\n"
-        f"The following excerpts are from the monolith source code, "
-        f"migration patterns, and microservice templates. Base your answer on these.\n\n"
+        f"The following excerpts are from the application source code, docs, and any "
+        f"patterns or templates in the knowledge base. Base your answer on these. \n\n "
+        f"Do not make any assumptions\n\n"
         f"{context_text}\n\n"
         f"=== END REFERENCE DOCUMENTATION ===\n\n"
         f"Request: {query}\n\n"
         f"Instructions:\n"
-        f"- Cite specific classes, methods, and file references from the documentation above.\n"
-        f"- When generating code, follow the exact patterns shown in the template documents "
-        f"(interface definitions, facade pattern, DI wiring).\n"
-        f"- Ensure all code is correct: include necessary using directives/imports and do not "
-        f"reference types or methods that don't exist.\n"
-        f"- Provide a detailed, actionable answer:"
+        f"- Begin with one short line: **Sources consulted:** then a comma-separated list of "
+        f"the `path` values you use (subset of the list above).\n"
+        f"- Cite specific classes, methods, and paths from the documentation; use the same "
+        f"`path` strings as in the excerpt headers.\n"
+        f"- When generating code, follow the exact patterns visible in the excerpts "
+        f"- If any interface, API, or behavior is unclear DO NOT invent it Insert a TODO with explanation" 
+        f"- Provide a dedicated section listing all assumptions"
+        f"- Provide a detailed, actionable answer with step by step instructions:"
     )
 
     messages = [SystemMessage(content=system_prompt), HumanMessage(content=user_prompt)]
     
-    import time
     start_time = time.time()
     response = llm.invoke(messages)
     end_time = time.time()
@@ -240,14 +267,13 @@ def vllm_rag_inference(model, query):
         sources_text = "\n\n---\n\n**📚 Sources:**\n\n"
         unique_sources = set()
         for doc in retrieved_docs:
-            source = doc.metadata.get('source', 'Unknown')
-            filename = os.path.basename(source) if source != 'Unknown' else 'Unknown'
-            if filename != 'Unknown':
-                unique_sources.add(filename)
-        
+            rel = _kb_relative_path(doc.metadata.get("source", "Unknown"), folder_path)
+            if rel != "Unknown":
+                unique_sources.add(rel)
+
         if unique_sources:
-            for i, filename in enumerate(sorted(unique_sources), 1):
-                sources_text += f"• `{filename}`\n"
+            for rel in sorted(unique_sources):
+                sources_text += f"• `{rel}`\n"
             response_content = response_content + sources_text
     
     # Return both response AND metrics
@@ -275,7 +301,6 @@ def vllm_llm_inference(model, query):
         HumanMessage(content=query),
     ]
     
-    import time
     start_time = time.time()
     response = llm.invoke(messages)
     end_time = time.time()
@@ -310,18 +335,16 @@ def get_retrieved_sources():
     """Get the file sources from the last RAG query.
     
     Returns:
-        list: List of tuples (filename, preview) for each retrieved document
+        list: List of tuples (kb_relative_path, preview) per retrieved chunk
     """
     global _last_retrieved_docs
     sources = []
+    kb_root = Path(f"{working_dir}/knowledge-base")
     for doc in _last_retrieved_docs:
-        # Get source from metadata, fallback to 'Unknown'
-        source = doc.metadata.get('source', 'Unknown')
-        # Extract just the filename from the full path
-        filename = os.path.basename(source) if source != 'Unknown' else 'Unknown'
-        # Get a preview of the content (first 150 characters)
+        source = doc.metadata.get("source", "Unknown")
+        display_path = _kb_relative_path(source, kb_root)
         preview = doc.page_content[:150] + "..." if len(doc.page_content) > 150 else doc.page_content
-        sources.append((filename, preview))
+        sources.append((display_path, preview))
     return sources
 
 
@@ -329,7 +352,3 @@ def clear_retrieved_sources():
     """Clear the retrieved sources (used when RAG is disabled)."""
     global _last_retrieved_docs
     _last_retrieved_docs = []
-
-
-
-
