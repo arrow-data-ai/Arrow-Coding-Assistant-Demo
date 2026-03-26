@@ -1,0 +1,62 @@
+@* Reusable confirmation modal component for delete operations *@
+@if (IsVisible)
+{
+    <div class="modal show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">@Title</h5>
+                    <button type="button" class="btn-close" @onclick="Cancel"></button>
+                </div>
+                <div class="modal-body">
+                    <p>@Message</p>
+                    @if (!string.IsNullOrEmpty(WarningMessage))
+                    {
+                        <p class="text-warning">
+                            <i class="fas fa-exclamation-triangle"></i> 
+                            @WarningMessage
+                        </p>
+                    }
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" @onclick="Cancel">@CancelText</button>
+                    <button type="button" class="btn btn-danger" @onclick="Confirm" disabled="@IsProcessing">
+                        @if (IsProcessing)
+                        {
+                            <span class="spinner-border spinner-border-sm" role="status"></span>
+                            <span>@ProcessingText</span>
+                        }
+                        else
+                        {
+                            <i class="fas fa-trash"></i>
+                            <span>@ConfirmText</span>
+                        }
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public bool IsVisible { get; set; } = false;
+    [Parameter] public string Title { get; set; } = "Confirm Delete";
+    [Parameter] public string Message { get; set; } = "Are you sure you want to delete this item?";
+    [Parameter] public string? WarningMessage { get; set; }
+    [Parameter] public string CancelText { get; set; } = "Cancel";
+    [Parameter] public string ConfirmText { get; set; } = "Delete";
+    [Parameter] public string ProcessingText { get; set; } = "Deleting...";
+    [Parameter] public bool IsProcessing { get; set; } = false;
+    [Parameter] public EventCallback OnConfirm { get; set; }
+    [Parameter] public EventCallback OnCancel { get; set; }
+
+    private async Task Confirm()
+    {
+        await OnConfirm.InvokeAsync();
+    }
+
+    private async Task Cancel()
+    {
+        await OnCancel.InvokeAsync();
+    }
+}

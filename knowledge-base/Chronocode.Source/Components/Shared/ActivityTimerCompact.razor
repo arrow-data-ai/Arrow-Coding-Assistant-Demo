@@ -1,0 +1,122 @@
+@using System.Timers
+@implements IDisposable
+
+<div style="min-width: 120px;">
+    <div class="text-center mb-1">
+        <small style="font-family: 'Courier New', monospace; font-weight: bold; color: #007bff;">
+            @FormatTime(elapsedSeconds)
+        </small>
+    </div>
+    
+    <div class="btn-group btn-group-sm" style="width: 100%;">
+        <button type="button" class="btn @(isRunning ? "btn-secondary" : "btn-success") btn-sm" 
+                @onclick="StartTimer" 
+                disabled="@isRunning"
+                style="font-size: 0.7rem; padding: 2px 4px;">
+            <i class="fas fa-play"></i>
+        </button>
+        
+        <button type="button" class="btn @(isRunning ? "btn-warning" : "btn-secondary") btn-sm" 
+                @onclick="StopTimer" 
+                disabled="@(!isRunning)"
+                style="font-size: 0.7rem; padding: 2px 4px;">
+            <i class="fas fa-pause"></i>
+        </button>
+        
+        <button type="button" class="btn btn-outline-secondary btn-sm" 
+                @onclick="ResetTimer"
+                style="font-size: 0.7rem; padding: 2px 4px;">
+            <i class="fas fa-undo"></i>
+        </button>
+        
+        <button type="button" class="btn btn-primary btn-sm" 
+                @onclick="SaveTime" 
+                disabled="@(elapsedSeconds == 0)"
+                style="font-size: 0.7rem; padding: 2px 4px;">
+            <i class="fas fa-save"></i>
+        </button>
+    </div>
+</div>
+
+@code {
+    [Parameter] public int ActivityId { get; set; }
+    [Parameter] public EventCallback<decimal> OnTimeSaved { get; set; }
+    
+    private bool isRunning = false;
+    private int elapsedSeconds = 0;
+    private System.Timers.Timer? timer;
+
+    protected override void OnInitialized()
+    {
+        timer = new System.Timers.Timer(1000); // 1 second interval
+        timer.Elapsed += OnTimerElapsed;
+    }
+
+    private void StartTimer()
+    {
+        if (!isRunning && timer != null)
+        {
+            isRunning = true;
+            timer.Start();
+        }
+    }
+
+    private void StopTimer()
+    {
+        if (isRunning && timer != null)
+        {
+            isRunning = false;
+            timer.Stop();
+        }
+    }
+
+    private void ResetTimer()
+    {
+        StopTimer();
+        elapsedSeconds = 0;
+        InvokeAsync(StateHasChanged);
+    }
+
+    private async Task SaveTime()
+    {
+        Console.WriteLine($"SaveTime called for activity {ActivityId} with {elapsedSeconds} seconds");
+        if (elapsedSeconds > 0)
+        {
+            var hours = ConvertToHours(elapsedSeconds);
+            Console.WriteLine($"Converting {elapsedSeconds} seconds to {hours} hours for activity {ActivityId}");
+            await OnTimeSaved.InvokeAsync(hours);
+            ResetTimer();
+        }
+        else
+        {
+            Console.WriteLine($"SaveTime called but no time recorded (elapsedSeconds = {elapsedSeconds})");
+        }
+    }
+
+    private async void OnTimerElapsed(object? sender, ElapsedEventArgs e)
+    {
+        elapsedSeconds++;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private static string FormatTime(int totalSeconds)
+    {
+        var hours = totalSeconds / 3600;
+        var minutes = (totalSeconds % 3600) / 60;
+        var seconds = totalSeconds % 60;
+        return $"{hours:D2}:{minutes:D2}:{seconds:D2}";
+    }
+
+    private static decimal ConvertToHours(int totalSeconds)
+    {
+        var hours = totalSeconds / 3600.0m;
+        // Round to nearest tenth of an hour
+        return Math.Round(hours, 1);
+    }
+
+    public void Dispose()
+    {
+        timer?.Stop();
+        timer?.Dispose();
+    }
+}

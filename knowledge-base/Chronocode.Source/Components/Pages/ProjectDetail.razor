@@ -1,0 +1,1129 @@
+@page "/projects/{ProjectId:int}"
+@rendermode InteractiveServer
+@using Chronocode.Data.Models
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Identity
+@inject ProjectService ProjectService
+@inject TaskService TaskService
+@inject ChargeCodeService ChargeCodeService
+@inject UserManager<ApplicationUser> UserManager
+@inject AuthenticationStateProvider AuthenticationStateProvider
+@inject NavigationManager Navigation
+@attribute [Authorize]
+
+<PageTitle>@(project?.Name ?? "Project") - Chronocode</PageTitle>
+
+@if (project == null)
+{
+    <div class="text-center">
+        <div class="spinner-border" role="status">
+            <span class="visually-hidden">Loading...</span>
+        </div>
+    </div>
+}
+else
+{
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <nav aria-label="breadcrumb">
+                <ol class="breadcrumb">
+                    <li class="breadcrumb-item"><a href="/projects">Projects</a></li>
+                    <li class="breadcrumb-item active">@project.Name</li>
+                </ol>
+            </nav>
+            <div class="d-flex align-items-center">
+                <h1>@project.Name</h1>
+                @if (project.IsComplete)
+                {
+                    <span class="badge bg-success ms-3">
+                        <i class="fas fa-check"></i> Complete
+                    </span>
+                }
+            </div>
+            @if (!string.IsNullOrEmpty(project.Description))
+            {
+                <p class="text-muted">@project.Description</p>
+            }
+            @if (project.IsComplete)
+            {
+                <div class="alert alert-warning">
+                    <i class="fas fa-info-circle"></i> This project is completed. No new tasks or activities can be added.
+                </div>
+            }
+        </div>
+    </div>
+
+    <!-- Tabs -->
+    <ul class="nav nav-tabs mb-4">
+        <li class="nav-item">
+            <button class="nav-link @(activeTab == "tasks" ? "active" : "")" @onclick="@(() => SetActiveTab("tasks"))">
+                <i class="fas fa-tasks"></i> Tasks (@tasks.Count)
+            </button>
+        </li>
+        <li class="nav-item">
+            <button class="nav-link @(activeTab == "chargecodes" ? "active" : "")" @onclick="@(() => SetActiveTab("chargecodes"))">
+                <i class="fas fa-barcode"></i> Charge Codes (@chargeCodes.Count)
+            </button>
+        </li>
+        <li class="nav-item">
+            <button class="nav-link @(activeTab == "team" ? "active" : "")" @onclick="@(() => SetActiveTab("team"))">
+                <i class="fas fa-users"></i> Team
+            </button>
+        </li>
+    </ul>
+
+    <!-- Tasks Tab -->
+    @if (activeTab == "tasks")
+    {
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <h5>Tasks</h5>
+            <button class="btn btn-primary" @onclick="ShowCreateTaskModal" disabled="@project.IsComplete">
+                <i class="fas fa-plus"></i> New Task
+            </button>
+        </div>
+
+        <!-- Search and Filter for Tasks -->
+        <SearchFilterBar SearchPlaceholder="Search tasks by name or description..."
+                         ShowInactiveFilter="true"
+                         ShowCompletedFilter="true"
+                         OnFiltersChanged="HandleTaskFiltersChanged" />
+
+        @if (tasks.Count == 0)
+        {
+            <div class="alert alert-info">
+                <h6>No Tasks Found</h6>
+                <p>This project doesn't have any tasks yet. @(project.IsComplete ? "This project is completed, so no new tasks can be added." : "Create your first task to organize activities.")</p>
+                @if (!project.IsComplete)
+                {
+                    <button class="btn btn-primary" @onclick="ShowCreateTaskModal">Create Task</button>
+                }
+            </div>
+        }
+        else
+        {
+            <div class="row">
+                @foreach (var task in GetFilteredTasks())
+                {
+                    <div class="col-md-6 col-lg-4 mb-3">
+                        <div class="card @(task.IsComplete ? "border-success" : "")">
+                            <div class="card-body">
+                                <div class="d-flex justify-content-between align-items-start mb-2">
+                                    <h6 class="card-title">@task.Name</h6>
+                                    @if (task.IsComplete)
+                                    {
+                                        <span class="badge bg-success">
+                                            <i class="fas fa-check"></i> Complete
+                                        </span>
+                                    }
+                                </div>
+                                <p class="card-text">@(task.Description ?? "No description")</p>
+                                <div class="small text-muted mb-2">
+                                    <div><strong>Activities:</strong> @task.Activities.Count(a => a.IsActive)</div>
+                                    @if (task.IsComplete)
+                                    {
+                                        <div class="text-warning"><i class="fas fa-lock"></i> No new activities can be added</div>
+                                    }
+                                </div>
+                            </div>
+                            <div class="card-footer">
+                                <div class="btn-group w-100">
+                                    <button class="btn btn-sm @(task.IsComplete ? "btn-warning" : "btn-success")" 
+                                            @onclick="() => ToggleTaskCompletion(task.Id)"
+                                            title="@(task.IsComplete ? "Mark as Incomplete" : "Mark as Complete")">
+                                        <i class="fas @(task.IsComplete ? "fa-undo" : "fa-check")"></i> 
+                                        @(task.IsComplete ? "Reopen" : "Complete")
+                                    </button>
+                                    <button class="btn btn-sm btn-outline-secondary" @onclick="() => EditTask(task)" 
+                                            disabled="@task.IsComplete">
+                                        <i class="fas fa-edit"></i> Edit
+                                    </button>
+                                    <button class="btn btn-sm btn-outline-danger" @onclick="() => ShowDeleteTaskModal(task)"
+                                            disabled="@task.IsComplete">
+                                        <i class="fas fa-trash"></i> Delete
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                }
+            </div>
+        }
+    }
+
+    <!-- Charge Codes Tab -->
+    @if (activeTab == "chargecodes")
+    {
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <div>
+                <h5>Charge Codes</h5>
+                @if (chargeCodes.Any())
+                {
+                    <small class="text-muted">
+                        @chargeCodes.Count(cc => cc.IsActive) active, @chargeCodes.Count(cc => !cc.IsActive) inactive
+                    </small>
+                }
+            </div>
+            <button class="btn btn-primary" @onclick="ShowCreateChargeCodeModal" disabled="@project.IsComplete">
+                <i class="fas fa-plus"></i> New Charge Code
+            </button>
+        </div>
+
+        <!-- Search and Filter for Charge Codes -->
+        <SearchFilterBar SearchPlaceholder="Search charge codes by code or name..."
+                         ShowInactiveFilter="true"
+                         ShowCompletedFilter="false"
+                         OnFiltersChanged="HandleChargeCodeFiltersChanged" />
+
+        @if (chargeCodes.Count == 0)
+        {
+            <div class="alert alert-info">
+                <h6>No Charge Codes Found</h6>
+                <p>This project doesn't have any charge codes yet. @(project.IsComplete ? "This project is completed, so no new charge codes can be added." : "Create charge codes to track time allocation.")</p>
+                @if (!project.IsComplete)
+                {
+                    <button class="btn btn-primary" @onclick="ShowCreateChargeCodeModal">Create Charge Code</button>
+                }
+            </div>
+        }
+        else
+        {
+            <div class="table-responsive">
+                <table class="table table-striped">
+                    <thead>
+                        <tr>
+                            <th class="sortable-header" @onclick="@(() => SortChargeCodes("code"))">
+                                Code 
+                                @if (chargeCodeSortColumn == "code")
+                                {
+                                    <i class="fas @(chargeCodeSortAscending ? "fa-sort-up" : "fa-sort-down")"></i>
+                                }
+                                else
+                                {
+                                    <i class="fas fa-sort text-muted"></i>
+                                }
+                            </th>
+                            <th class="sortable-header" @onclick="@(() => SortChargeCodes("name"))">
+                                Name 
+                                @if (chargeCodeSortColumn == "name")
+                                {
+                                    <i class="fas @(chargeCodeSortAscending ? "fa-sort-up" : "fa-sort-down")"></i>
+                                }
+                                else
+                                {
+                                    <i class="fas fa-sort text-muted"></i>
+                                }
+                            </th>
+                            <th class="sortable-header" @onclick="@(() => SortChargeCodes("validfrom"))">
+                                Valid From 
+                                @if (chargeCodeSortColumn == "validfrom")
+                                {
+                                    <i class="fas @(chargeCodeSortAscending ? "fa-sort-up" : "fa-sort-down")"></i>
+                                }
+                                else
+                                {
+                                    <i class="fas fa-sort text-muted"></i>
+                                }
+                            </th>
+                            <th class="sortable-header" @onclick="@(() => SortChargeCodes("validto"))">
+                                Valid To 
+                                @if (chargeCodeSortColumn == "validto")
+                                {
+                                    <i class="fas @(chargeCodeSortAscending ? "fa-sort-up" : "fa-sort-down")"></i>
+                                }
+                                else
+                                {
+                                    <i class="fas fa-sort text-muted"></i>
+                                }
+                            </th>
+                            <th class="sortable-header" @onclick="@(() => SortChargeCodes("activities"))">
+                                Activities 
+                                @if (chargeCodeSortColumn == "activities")
+                                {
+                                    <i class="fas @(chargeCodeSortAscending ? "fa-sort-up" : "fa-sort-down")"></i>
+                                }
+                                else
+                                {
+                                    <i class="fas fa-sort text-muted"></i>
+                                }
+                            </th>
+                            <th class="sortable-header" @onclick="@(() => SortChargeCodes("lastused"))">
+                                Last Used 
+                                @if (chargeCodeSortColumn == "lastused")
+                                {
+                                    <i class="fas @(chargeCodeSortAscending ? "fa-sort-up" : "fa-sort-down")"></i>
+                                }
+                                else
+                                {
+                                    <i class="fas fa-sort text-muted"></i>
+                                }
+                            </th>
+                            <th class="sortable-header" @onclick="@(() => SortChargeCodes("status"))">
+                                Status 
+                                @if (chargeCodeSortColumn == "status")
+                                {
+                                    <i class="fas @(chargeCodeSortAscending ? "fa-sort-up" : "fa-sort-down")"></i>
+                                }
+                                else
+                                {
+                                    <i class="fas fa-sort text-muted"></i>
+                                }
+                            </th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var chargeCode in GetFilteredChargeCodes())
+                        {
+                            var activityCount = chargeCodeActivityCounts.GetValueOrDefault(chargeCode.Id, 0);
+                            var lastUsed = chargeCodeLastUsedDates.GetValueOrDefault(chargeCode.Id);
+                            var canSafelyDelete = activityCount == 0;
+                            
+                            <tr class="@((!chargeCode.IsActive) ? "table-secondary text-muted" : IsChargeCodeExpired(chargeCode) ? "table-warning" : IsChargeCodeExpiringSoon(chargeCode) ? "table-warning" : "")">
+                                <td>
+                                    <strong class="@((!chargeCode.IsActive) ? "text-muted" : "")">@chargeCode.Code</strong>
+                                    @if (!chargeCode.IsActive)
+                                    {
+                                        <span class="badge bg-secondary ms-1">Inactive</span>
+                                    }
+                                    @if (canSafelyDelete)
+                                    {
+                                        <span class="badge bg-success ms-1" title="No activities - safe to delete">
+                                            <i class="fas fa-check-circle"></i> Safe to Delete
+                                        </span>
+                                    }
+                                </td>
+                                <td class="@((!chargeCode.IsActive) ? "text-muted" : "")">@chargeCode.Name</td>
+                                <td class="@((!chargeCode.IsActive) ? "text-muted" : "")">@chargeCode.ValidFromDate.ToString("MM/dd/yyyy")</td>
+                                <td class="@((!chargeCode.IsActive) ? "text-muted" : "")">@chargeCode.ValidToDate.ToString("MM/dd/yyyy")</td>
+                                <td>
+                                    @if (activityCount > 0)
+                                    {
+                                        <span class="badge bg-info">@activityCount</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="text-muted">0</span>
+                                    }
+                                </td>
+                                <td class="@((!chargeCode.IsActive) ? "text-muted" : "")">
+                                    @if (lastUsed.HasValue)
+                                    {
+                                        @lastUsed.Value.ToString("MM/dd/yyyy")
+                                    }
+                                    else
+                                    {
+                                        <span class="text-muted">Never</span>
+                                    }
+                                </td>
+                                <td>
+                                    @if (!chargeCode.IsActive)
+                                    {
+                                        <span class="badge bg-secondary">Inactive</span>
+                                    }
+                                    else if (IsChargeCodeExpired(chargeCode))
+                                    {
+                                        <span class="badge bg-danger">Expired</span>
+                                    }
+                                    else if (IsChargeCodeExpiringSoon(chargeCode))
+                                    {
+                                        <span class="badge bg-warning">Expires Soon</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="badge bg-success">Active</span>
+                                    }
+                                </td>
+                                <td>
+                                    <div class="btn-group btn-group-sm">
+                                        @if (chargeCode.IsActive)
+                                        {
+                                            <button class="btn btn-outline-primary" @onclick="() => ViewChargeCodeDetails(chargeCode.Id)" title="View Details & Artifacts">
+                                                <i class="fas fa-eye"></i> Details
+                                            </button>
+                                        }
+                                        
+                                        <button class="btn btn-outline-secondary" @onclick="() => EditChargeCode(chargeCode)" title="Edit Charge Code">
+                                            <i class="fas fa-edit"></i> Edit
+                                        </button>
+                                        
+                                        <button class="btn @(chargeCode.IsActive ? "btn-outline-warning" : "btn-outline-success")" 
+                                                @onclick="() => ToggleChargeCodeStatus(chargeCode.Id)" 
+                                                title="@(chargeCode.IsActive ? "Deactivate" : "Activate") Charge Code">
+                                            <i class="fas @(chargeCode.IsActive ? "fa-pause" : "fa-play")"></i> 
+                                            @(chargeCode.IsActive ? "Deactivate" : "Activate")
+                                        </button>
+                                        
+                                        <button class="btn btn-outline-danger" @onclick="() => ShowDeleteChargeCodeModal(chargeCode)" title="Delete Charge Code">
+                                            <i class="fas fa-trash"></i> Delete
+                                        </button>
+                                    </div>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    }
+
+    <!-- Team Tab -->
+    @if (activeTab == "team")
+    {
+        <!-- Search and Filter for Team -->
+        <SearchFilterBar SearchPlaceholder="Search team members by name or email..."
+                         ShowInactiveFilter="true"
+                         ShowCompletedFilter="false"
+                         OnFiltersChanged="HandleTeamFiltersChanged" />
+
+        <div class="row">
+            <div class="col-md-6">
+                <h6>Engineers</h6>
+                @if (GetFilteredEngineers().Any())
+                {
+                    <ul class="list-group">
+                        @foreach (var engineer in GetFilteredEngineers())
+                        {
+                            <li class="list-group-item d-flex justify-content-between align-items-center">
+                                @engineer.User.FullName
+                                <small>@engineer.User.Email</small>
+                            </li>
+                        }
+                    </ul>
+                }
+                else
+                {
+                    <p class="text-muted">No engineers assigned to this project.</p>
+                }
+            </div>
+            <div class="col-md-6">
+                <h6>Managers</h6>
+                @if (GetFilteredManagers().Any())
+                {
+                    <ul class="list-group">
+                        @foreach (var manager in GetFilteredManagers())
+                        {
+                            <li class="list-group-item d-flex justify-content-between align-items-center">
+                                @manager.User.FullName
+                                <small>@manager.User.Email</small>
+                            </li>
+                        }
+                    </ul>
+                }
+                else
+                {
+                    <p class="text-muted">No managers assigned to this project.</p>
+                }
+            </div>
+        </div>
+    }
+}
+
+<!-- Task Modal -->
+@if (showTaskModal)
+{
+    <div class="modal show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">@(editingTask?.Id == 0 ? "Create Task" : "Edit Task")</h5>
+                    <button type="button" class="btn-close" @onclick="HideTaskModal"></button>
+                </div>
+                <div class="modal-body">
+                    <EditForm Model="editingTask" OnValidSubmit="SaveTask">
+                        <DataAnnotationsValidator />
+                        <ValidationSummary class="text-danger" />
+                        
+                        <div class="mb-3">
+                            <label for="taskName" class="form-label">Task Name *</label>
+                            <InputText id="taskName" class="form-control" @bind-Value="editingTask!.Name" />
+                            <ValidationMessage For="() => editingTask!.Name" />
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label for="taskDescription" class="form-label">Description</label>
+                            <InputTextArea id="taskDescription" class="form-control" rows="3" @bind-Value="editingTask!.Description" />
+                        </div>
+                        
+                        @if (editingTask?.Id == 0)
+                        {
+                            <div class="mb-3">
+                                <div class="form-check">
+                                    <input type="checkbox" id="copyToOtherProjects" class="form-check-input" 
+                                           @bind="copyToOtherProjects" />
+                                    <label for="copyToOtherProjects" class="form-check-label">
+                                        Copy task to other Projects
+                                        <small class="text-muted d-block">Select projects to copy this task to</small>
+                                    </label>
+                                </div>
+                            </div>
+                            
+                            @if (copyToOtherProjects && allProjects.Any())
+                            {
+                                <div class="mb-3">
+                                    <label class="form-label">Select Projects:</label>
+                                    <div class="border rounded p-2" style="max-height: 200px; overflow-y: auto;">
+                                        @foreach (var proj in allProjects)
+                                        {
+                                            <div class="form-check">
+                                                <input type="checkbox" 
+                                                       id="project-@proj.Id" 
+                                                       class="form-check-input" 
+                                                       checked="@selectedProjectIds.Contains(proj.Id)"
+                                                       @onchange="() => ToggleProjectSelection(proj.Id)" />
+                                                <label for="project-@proj.Id" class="form-check-label">
+                                                    @proj.Name
+                                                </label>
+                                            </div>
+                                        }
+                                    </div>
+                                    @if (selectedProjectIds.Any())
+                                    {
+                                        <small class="text-muted">@selectedProjectIds.Count project(s) selected</small>
+                                    }
+                                </div>
+                            }
+                            else if (copyToOtherProjects && !allProjects.Any())
+                            {
+                                <div class="alert alert-info">
+                                    <small>No other active projects available to copy to.</small>
+                                </div>
+                            }
+                        }
+                        
+                        @if (editingTask?.Id != 0)
+                        {
+                            <div class="mb-3">
+                                <div class="form-check">
+                                    <InputCheckbox id="taskIsComplete" class="form-check-input" @bind-Value="editingTask!.IsComplete" />
+                                    <label for="taskIsComplete" class="form-check-label">
+                                        Mark as Complete
+                                        <small class="text-muted d-block">Completed tasks cannot have new activities added.</small>
+                                    </label>
+                                </div>
+                            </div>
+                        }
+                        
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-secondary" @onclick="HideTaskModal">Cancel</button>
+                            <button type="submit" class="btn btn-primary">
+                                @(editingTask?.Id == 0 ? "Create" : "Update")
+                            </button>
+                        </div>
+                    </EditForm>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- Charge Code Modal -->
+@if (showChargeCodeModal)
+{
+    <div class="modal show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">@(editingChargeCode?.Id == 0 ? "Create Charge Code" : "Edit Charge Code")</h5>
+                    <button type="button" class="btn-close" @onclick="HideChargeCodeModal"></button>
+                </div>
+                <div class="modal-body">
+                    <EditForm Model="editingChargeCode" OnValidSubmit="SaveChargeCode">
+                        <DataAnnotationsValidator />
+                        <ValidationSummary class="text-danger" />
+                        
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="chargeCodeCode" class="form-label">Code *</label>
+                                    <InputText id="chargeCodeCode" class="form-control" @bind-Value="editingChargeCode!.Code" />
+                                    <ValidationMessage For="() => editingChargeCode!.Code" />
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="chargeCodeName" class="form-label">Name *</label>
+                                    <InputText id="chargeCodeName" class="form-control" @bind-Value="editingChargeCode!.Name" />
+                                    <ValidationMessage For="() => editingChargeCode!.Name" />
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label for="chargeCodeDescription" class="form-label">Description</label>
+                            <InputTextArea id="chargeCodeDescription" class="form-control" rows="3" @bind-Value="editingChargeCode!.Description" />
+                        </div>
+
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="validFrom" class="form-label">Valid From *</label>
+                                    <InputDate id="validFrom" class="form-control" @bind-Value="editingChargeCode!.ValidFromDate" />
+                                    <ValidationMessage For="() => editingChargeCode!.ValidFromDate" />
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="validTo" class="form-label">Valid To *</label>
+                                    <InputDate id="validTo" class="form-control" @bind-Value="editingChargeCode!.ValidToDate" />
+                                    <ValidationMessage For="() => editingChargeCode!.ValidToDate" />
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-secondary" @onclick="HideChargeCodeModal">Cancel</button>
+                            <button type="submit" class="btn btn-primary">
+                                @(editingChargeCode?.Id == 0 ? "Create" : "Update")
+                            </button>
+                        </div>
+                    </EditForm>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- Delete Task Confirmation Modal -->
+<ConfirmationModal IsVisible="showDeleteTaskModal"
+                  Title="Confirm Delete Task"
+                  Message="@($"Are you sure you want to delete the task '{taskToDelete?.Name}'?")"
+                  WarningMessage="This action will hide the task and all associated activities. This cannot be undone."
+                  IsProcessing="isDeletingTask"
+                  OnConfirm="ConfirmDeleteTask"
+                  OnCancel="CancelDeleteTask" />
+
+<!-- Delete Charge Code Confirmation Modal -->
+<ConfirmationModal IsVisible="showDeleteChargeCodeModal"
+                  Title="Confirm Delete Charge Code"
+                  Message="@GetDeleteChargeCodeMessage()"
+                  WarningMessage="@GetDeleteChargeCodeWarning()"
+                  IsProcessing="isDeletingChargeCode"
+                  OnConfirm="ConfirmDeleteChargeCode"
+                  OnCancel="CancelDeleteChargeCode" />
+
+@code {
+    [Parameter] public int ProjectId { get; set; }
+
+    private Project? project;
+    private List<ProjectTask> tasks = new();
+    private List<ChargeCode> chargeCodes = new();
+    private string activeTab = "tasks";
+    private string? currentUserId;
+
+    // Charge code activity tracking
+    private Dictionary<int, int> chargeCodeActivityCounts = new();
+    private Dictionary<int, DateTime?> chargeCodeLastUsedDates = new();
+
+    // Task modal
+    private bool showTaskModal = false;
+    private ProjectTask editingTask = new();
+    private bool copyToOtherProjects = false;
+    private List<Project> allProjects = new();
+    private HashSet<int> selectedProjectIds = new();
+
+    // Charge code modal
+    private bool showChargeCodeModal = false;
+    private ChargeCode editingChargeCode = new();
+    
+    // Delete confirmation modal state
+    private bool showDeleteTaskModal = false;
+    private ProjectTask? taskToDelete = null;
+    private bool isDeletingTask = false;
+    
+    private bool showDeleteChargeCodeModal = false;
+    private ChargeCode? chargeCodeToDelete = null;
+    private bool isDeletingChargeCode = false;
+    private int chargeCodeToDeleteActivityCount = 0;
+
+    // Search and filter state for Tasks
+    private string taskSearchQuery = string.Empty;
+    private bool taskShowInactive = false;
+    private bool taskShowCompleted = false;
+
+    // Search and filter state for Charge Codes
+    private string chargeCodeSearchQuery = string.Empty;
+    private bool chargeCodeShowInactive = false;
+
+    // Sort state for Charge Codes
+    private string chargeCodeSortColumn = "code";
+    private bool chargeCodeSortAscending = true;
+
+    // Search and filter state for Team
+    private string teamSearchQuery = string.Empty;
+    private bool teamShowInactive = false;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+        if (authState.User.Identity?.IsAuthenticated == true)
+        {
+            var user = await UserManager.GetUserAsync(authState.User);
+            if (user != null)
+            {
+                currentUserId = user.Id;
+                await LoadProject();
+                
+                // Check for tab query parameter and restore tab state
+                var uri = new Uri(Navigation.Uri);
+                var queryParams = System.Web.HttpUtility.ParseQueryString(uri.Query);
+                var tabParam = queryParams["tab"];
+                if (!string.IsNullOrEmpty(tabParam))
+                {
+                    activeTab = tabParam;
+                }
+            }
+        }
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        await LoadProject();
+    }
+
+    private async Task LoadProject()
+    {
+        if (currentUserId != null)
+        {
+            project = await ProjectService.GetProjectByIdAsync(ProjectId, currentUserId);
+            if (project != null)
+            {
+                tasks = await TaskService.GetProjectTasksAsync(ProjectId, currentUserId);
+                chargeCodes = await ChargeCodeService.GetAllProjectChargeCodesAsync(ProjectId);
+                
+                // Load activity counts and last used dates for charge codes
+                chargeCodeActivityCounts.Clear();
+                chargeCodeLastUsedDates.Clear();
+                foreach (var chargeCode in chargeCodes)
+                {
+                    chargeCodeActivityCounts[chargeCode.Id] = await ChargeCodeService.GetChargeCodeActivityCountAsync(chargeCode.Id);
+                    chargeCodeLastUsedDates[chargeCode.Id] = await ChargeCodeService.GetChargeCodeLastUsedDateAsync(chargeCode.Id);
+                }
+            }
+        }
+    }
+
+    private void SetActiveTab(string tab)
+    {
+        activeTab = tab;
+    }
+
+    private void EditProject()
+    {
+        Navigation.NavigateTo($"/projects");
+    }
+
+    // Task methods
+    private async Task ShowCreateTaskModal()
+    {
+        editingTask = new ProjectTask { ProjectId = ProjectId };
+        copyToOtherProjects = false;
+        selectedProjectIds.Clear();
+        
+        // Load all active non-completed projects for the multi-project copy feature
+        if (currentUserId != null)
+        {
+            allProjects = await ProjectService.GetUserActiveProjectsAsync(currentUserId, excludeCompleted: true);
+            // Remove the current project from the list
+            allProjects = allProjects.Where(p => p.Id != ProjectId).ToList();
+        }
+        
+        showTaskModal = true;
+    }
+
+    private void EditTask(ProjectTask task)
+    {
+        editingTask = new ProjectTask
+        {
+            Id = task.Id,
+            Name = task.Name,
+            Description = task.Description,
+            ProjectId = task.ProjectId,
+            CreatedDate = task.CreatedDate,
+            ModifiedDate = task.ModifiedDate,
+            IsActive = task.IsActive,
+            IsComplete = task.IsComplete
+        };
+        showTaskModal = true;
+    }
+
+    private void HideTaskModal()
+    {
+        showTaskModal = false;
+        editingTask = new();
+        copyToOtherProjects = false;
+        selectedProjectIds.Clear();
+    }
+
+    private async Task SaveTask()
+    {
+        try
+        {
+            if (currentUserId != null)
+            {
+                if (editingTask.Id == 0)
+                {
+                    // If copy to other projects is enabled and projects are selected
+                    // Create tasks in all projects including the current one
+                    if (copyToOtherProjects && selectedProjectIds.Any())
+                    {
+                        // Add current project to the list of projects
+                        var allProjectIdList = selectedProjectIds.ToList();
+                        allProjectIdList.Add(ProjectId);
+                        
+                        // Create tasks in all projects
+                        await TaskService.CreateTaskInMultipleProjectsAsync(editingTask, allProjectIdList, currentUserId);
+                    }
+                    else
+                    {
+                        // Create task only in the current project
+                        await TaskService.CreateTaskAsync(editingTask, currentUserId);
+                    }
+                }
+                else
+                {
+                    await TaskService.UpdateTaskAsync(editingTask, currentUserId);
+                }
+                
+                await LoadProject();
+                HideTaskModal();
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error saving task: {ex.Message}");
+        }
+    }
+
+    private void ToggleProjectSelection(int projectId)
+    {
+        if (selectedProjectIds.Contains(projectId))
+        {
+            selectedProjectIds.Remove(projectId);
+        }
+        else
+        {
+            selectedProjectIds.Add(projectId);
+        }
+    }
+
+    private void ShowDeleteTaskModal(ProjectTask task)
+    {
+        taskToDelete = task;
+        showDeleteTaskModal = true;
+    }
+
+    private void CancelDeleteTask()
+    {
+        showDeleteTaskModal = false;
+        taskToDelete = null;
+        isDeletingTask = false;
+    }
+
+    private async Task ConfirmDeleteTask()
+    {
+        if (taskToDelete == null || currentUserId == null) return;
+
+        try
+        {
+            isDeletingTask = true;
+            await TaskService.DeleteTaskAsync(taskToDelete.Id, currentUserId);
+            await LoadProject();
+            
+            // Close modal after successful deletion
+            CancelDeleteTask();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error deleting task: {ex.Message}");
+            isDeletingTask = false;
+        }
+    }
+
+    private async Task ToggleTaskCompletion(int taskId)
+    {
+        if (currentUserId != null)
+        {
+            await TaskService.ToggleTaskCompletionAsync(taskId, currentUserId);
+            await LoadProject();
+        }
+    }
+
+    // Charge code methods
+    private void ShowCreateChargeCodeModal()
+    {
+        editingChargeCode = new ChargeCode 
+        { 
+            ProjectId = ProjectId,
+            ValidFromDate = DateTime.Today,
+            ValidToDate = DateTime.Today.AddYears(1)
+        };
+        showChargeCodeModal = true;
+    }
+
+    private void EditChargeCode(ChargeCode chargeCode)
+    {
+        editingChargeCode = new ChargeCode
+        {
+            Id = chargeCode.Id,
+            Code = chargeCode.Code,
+            Name = chargeCode.Name,
+            Description = chargeCode.Description,
+            ProjectId = chargeCode.ProjectId,
+            ValidFromDate = chargeCode.ValidFromDate,
+            ValidToDate = chargeCode.ValidToDate,
+            CreatedDate = chargeCode.CreatedDate,
+            ModifiedDate = chargeCode.ModifiedDate,
+            IsActive = chargeCode.IsActive
+        };
+        showChargeCodeModal = true;
+    }
+
+    private void ViewChargeCodeDetails(int chargeCodeId)
+    {
+        Navigation.NavigateTo($"/chargecode-details/{chargeCodeId}?returnProjectId={ProjectId}");
+    }
+
+    private void HideChargeCodeModal()
+    {
+        showChargeCodeModal = false;
+        editingChargeCode = new();
+    }
+
+    private async Task SaveChargeCode()
+    {
+        try
+        {
+            if (editingChargeCode.Id == 0)
+            {
+                await ChargeCodeService.CreateChargeCodeAsync(editingChargeCode);
+            }
+            else
+            {
+                await ChargeCodeService.UpdateChargeCodeAsync(editingChargeCode);
+            }
+            
+            await LoadProject();
+            HideChargeCodeModal();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error saving charge code: {ex.Message}");
+        }
+    }
+
+    private void ShowDeleteChargeCodeModal(ChargeCode chargeCode)
+    {
+        chargeCodeToDelete = chargeCode;
+        chargeCodeToDeleteActivityCount = chargeCodeActivityCounts.GetValueOrDefault(chargeCode.Id, 0);
+        showDeleteChargeCodeModal = true;
+    }
+
+    private void CancelDeleteChargeCode()
+    {
+        showDeleteChargeCodeModal = false;
+        chargeCodeToDeleteActivityCount = 0;
+        isDeletingChargeCode = false;
+    }
+
+    private async Task ConfirmDeleteChargeCode()
+    {
+        if (chargeCodeToDelete == null) return;
+
+        try
+        {
+            isDeletingChargeCode = true;
+            
+            // Try hard delete first (only works if no activities)
+            bool hardDeleted = await ChargeCodeService.HardDeleteChargeCodeAsync(chargeCodeToDelete.Id);
+            
+            if (!hardDeleted)
+            {
+                // Fall back to soft delete if there are activities
+                await ChargeCodeService.DeleteChargeCodeAsync(chargeCodeToDelete.Id);
+            }
+            
+            await LoadProject();
+            
+            // Close modal after successful deletion
+            CancelDeleteChargeCode();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error deleting charge code: {ex.Message}");
+            isDeletingChargeCode = false;
+        }
+    }
+
+    private string GetDeleteChargeCodeMessage()
+    {
+        if (chargeCodeToDelete == null) return string.Empty;
+        
+        if (chargeCodeToDeleteActivityCount == 0)
+        {
+            return $"Are you sure you want to permanently delete the charge code '{chargeCodeToDelete.Name}'?";
+        }
+        else
+        {
+            return $"Are you sure you want to delete the charge code '{chargeCodeToDelete.Name}'? This charge code has {chargeCodeToDeleteActivityCount} activity record(s).";
+        }
+    }
+
+    private string GetDeleteChargeCodeWarning()
+    {
+        if (chargeCodeToDeleteActivityCount == 0)
+        {
+            return "This charge code has no activities and will be permanently deleted. This cannot be undone.";
+        }
+        else
+        {
+            return $"This charge code has {chargeCodeToDeleteActivityCount} activity record(s) and cannot be permanently deleted. It will be deactivated instead, preserving historical data.";
+        }
+    }
+
+    private async Task ToggleChargeCodeStatus(int chargeCodeId)
+    {
+        await ChargeCodeService.ToggleChargeCodeStatusAsync(chargeCodeId);
+        await LoadProject();
+    }
+
+    private bool IsChargeCodeExpired(ChargeCode chargeCode)
+    {
+        return chargeCode.ValidToDate < DateTime.Today;
+    }
+
+    private bool IsChargeCodeExpiringSoon(ChargeCode chargeCode)
+    {
+        return !IsChargeCodeExpired(chargeCode) && chargeCode.ValidToDate <= DateTime.Today.AddDays(30);
+    }
+
+    // Filter handlers
+    private void HandleTaskFiltersChanged(SearchFilterBar.FilterState filterState)
+    {
+        taskSearchQuery = filterState.SearchQuery;
+        taskShowInactive = filterState.ShowInactive;
+        taskShowCompleted = filterState.ShowCompleted;
+    }
+
+    private List<ProjectTask> GetFilteredTasks()
+    {
+        var filtered = tasks.AsEnumerable();
+
+        // Apply search filter
+        if (!string.IsNullOrWhiteSpace(taskSearchQuery))
+        {
+            filtered = filtered.Where(t =>
+                t.Name.Contains(taskSearchQuery, StringComparison.OrdinalIgnoreCase) ||
+                (t.Description != null && t.Description.Contains(taskSearchQuery, StringComparison.OrdinalIgnoreCase)));
+        }
+
+        // Apply inactive filter - by default hide inactive
+        filtered = filtered.Where(t => taskShowInactive || t.IsActive);
+
+        // Apply completed filter - by default hide completed
+        filtered = filtered.Where(t => taskShowCompleted || !t.IsComplete);
+
+        return filtered.ToList();
+    }
+
+    private void HandleChargeCodeFiltersChanged(SearchFilterBar.FilterState filterState)
+    {
+        chargeCodeSearchQuery = filterState.SearchQuery;
+        chargeCodeShowInactive = filterState.ShowInactive;
+    }
+
+    private void SortChargeCodes(string column)
+    {
+        if (chargeCodeSortColumn == column)
+        {
+            chargeCodeSortAscending = !chargeCodeSortAscending;
+        }
+        else
+        {
+            chargeCodeSortColumn = column;
+            chargeCodeSortAscending = true;
+        }
+    }
+
+    private List<ChargeCode> GetFilteredChargeCodes()
+    {
+        var filtered = chargeCodes.AsEnumerable();
+
+        // Apply search filter
+        if (!string.IsNullOrWhiteSpace(chargeCodeSearchQuery))
+        {
+            filtered = filtered.Where(cc =>
+                cc.Code.Contains(chargeCodeSearchQuery, StringComparison.OrdinalIgnoreCase) ||
+                cc.Name.Contains(chargeCodeSearchQuery, StringComparison.OrdinalIgnoreCase));
+        }
+
+        // Apply inactive filter - by default hide inactive
+        filtered = filtered.Where(cc => chargeCodeShowInactive || cc.IsActive);
+
+        // Apply sorting
+        filtered = chargeCodeSortColumn switch
+        {
+            "code" => chargeCodeSortAscending ? filtered.OrderBy(cc => cc.Code) : filtered.OrderByDescending(cc => cc.Code),
+            "name" => chargeCodeSortAscending ? filtered.OrderBy(cc => cc.Name) : filtered.OrderByDescending(cc => cc.Name),
+            "validfrom" => chargeCodeSortAscending ? filtered.OrderBy(cc => cc.ValidFromDate) : filtered.OrderByDescending(cc => cc.ValidFromDate),
+            "validto" => chargeCodeSortAscending ? filtered.OrderBy(cc => cc.ValidToDate) : filtered.OrderByDescending(cc => cc.ValidToDate),
+            "activities" => chargeCodeSortAscending 
+                ? filtered.OrderBy(cc => chargeCodeActivityCounts.GetValueOrDefault(cc.Id, 0)) 
+                : filtered.OrderByDescending(cc => chargeCodeActivityCounts.GetValueOrDefault(cc.Id, 0)),
+            "lastused" => chargeCodeSortAscending 
+                ? filtered.OrderBy(cc => chargeCodeLastUsedDates.GetValueOrDefault(cc.Id) ?? DateTime.MinValue) 
+                : filtered.OrderByDescending(cc => chargeCodeLastUsedDates.GetValueOrDefault(cc.Id) ?? DateTime.MinValue),
+            "status" => chargeCodeSortAscending 
+                ? filtered.OrderBy(cc => cc.IsActive ? (IsChargeCodeExpired(cc) ? 2 : 1) : 3)
+                : filtered.OrderByDescending(cc => cc.IsActive ? (IsChargeCodeExpired(cc) ? 2 : 1) : 3),
+            _ => filtered.OrderBy(cc => cc.Code)
+        };
+
+        return filtered.ToList();
+    }
+
+    private void HandleTeamFiltersChanged(SearchFilterBar.FilterState filterState)
+    {
+        teamSearchQuery = filterState.SearchQuery;
+        teamShowInactive = filterState.ShowInactive;
+    }
+
+    private List<ProjectEngineer> GetFilteredEngineers()
+    {
+        if (project == null) return new List<ProjectEngineer>();
+        
+        var filtered = project.Engineers.AsEnumerable();
+
+        // Apply search filter
+        if (!string.IsNullOrWhiteSpace(teamSearchQuery))
+        {
+            filtered = filtered.Where(e =>
+                e.User.FullName.Contains(teamSearchQuery, StringComparison.OrdinalIgnoreCase) ||
+                (e.User.Email != null && e.User.Email.Contains(teamSearchQuery, StringComparison.OrdinalIgnoreCase)));
+        }
+
+        // Apply inactive filter - by default hide inactive
+        filtered = filtered.Where(e => teamShowInactive || e.IsActive);
+
+        return filtered.ToList();
+    }
+
+    private List<ProjectManager> GetFilteredManagers()
+    {
+        if (project == null) return new List<ProjectManager>();
+        
+        var filtered = project.Managers.AsEnumerable();
+
+        // Apply search filter
+        if (!string.IsNullOrWhiteSpace(teamSearchQuery))
+        {
+            filtered = filtered.Where(m =>
+                m.User.FullName.Contains(teamSearchQuery, StringComparison.OrdinalIgnoreCase) ||
+                (m.User.Email != null && m.User.Email.Contains(teamSearchQuery, StringComparison.OrdinalIgnoreCase)));
+        }
+
+        // Apply inactive filter - by default hide inactive
+        filtered = filtered.Where(m => teamShowInactive || m.IsActive);
+
+        return filtered.ToList();
+    }
+}

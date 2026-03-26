@@ -1,0 +1,1140 @@
+@page "/reports"
+@rendermode InteractiveServer
+@using Chronocode.Data.Models
+@using Chronocode.Services
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Identity
+@inject ReportService ReportService
+@inject UserManager<ApplicationUser> UserManager
+@inject AuthenticationStateProvider AuthenticationStateProvider
+@attribute [Authorize]
+
+<PageTitle>Reports - Chronocode</PageTitle>
+
+<div class="d-flex align-items-center gap-2 mb-4">
+    <h1 class="mb-0">Reports</h1>
+    <HelpComponent ContextTopic="reports" />
+</div>
+
+<!-- Report Type Tabs -->
+<ul class="nav nav-tabs mb-4" id="reportTabs" role="tablist">
+    <li class="nav-item" role="presentation">
+        <button class="nav-link @(selectedTab == "activity" ? "active" : "")" 
+                id="activity-tab" 
+                data-bs-toggle="tab" 
+                data-bs-target="#activity" 
+                type="button" 
+                role="tab" 
+                aria-controls="activity" 
+                aria-selected="@(selectedTab == "activity")"
+                @onclick="SelectActivityTab">>>
+            Activity Reports
+        </button>
+    </li>
+    <li class="nav-item" role="presentation">
+        <button class="nav-link @(selectedTab == "task" ? "active" : "")" 
+                id="task-tab" 
+                data-bs-toggle="tab" 
+                data-bs-target="#task" 
+                type="button" 
+                role="tab" 
+                aria-controls="task" 
+                aria-selected="@(selectedTab == "task")"
+                @onclick="SelectTaskTab">>
+            Task Reports
+        </button>
+    </li>
+    <li class="nav-item" role="presentation">
+        <button class="nav-link @(selectedTab == "chargecode" ? "active" : "")" 
+                id="chargecode-tab" 
+                data-bs-toggle="tab" 
+                data-bs-target="#chargecode" 
+                type="button" 
+                role="tab" 
+                aria-controls="chargecode" 
+                aria-selected="@(selectedTab == "chargecode")"
+                @onclick="SelectChargeCodeTab">>
+            Charge Code Reports
+        </button>
+    </li>
+</ul>
+
+<div class="tab-content" id="reportTabContent">
+    <!-- Activity Reports Tab -->
+    <div class="tab-pane fade @(selectedTab == "activity" ? "show active" : "")" id="activity" role="tabpanel" aria-labelledby="activity-tab">
+        <div class="row mb-4">
+            <div class="col-md-12">
+                <div class="card">
+                    <div class="card-header">
+                        <h5>Generate Activity Report</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="row">
+                            <div class="col-md-3">
+                                <div class="mb-3">
+                                    <label for="reportType" class="form-label">Report Type</label>
+                                    <select id="reportType" class="form-control" @bind="selectedReportType">
+                                        <option value="daily">Daily</option>
+                                        <option value="weekly">Weekly</option>
+                                        <option value="custom">Custom Range</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="col-md-3">
+                                <div class="mb-3">
+                                    <label for="startDate" class="form-label">
+                                        @(selectedReportType == "daily" ? "Date" : "Start Date")
+                                    </label>
+                                    <input type="date" id="startDate" class="form-control" @bind="startDate" />
+                                </div>
+                            </div>
+                            @if (selectedReportType == "custom")
+                            {
+                                <div class="col-md-3">
+                                    <div class="mb-3">
+                                        <label for="endDate" class="form-label">End Date</label>
+                                        <input type="date" id="endDate" class="form-control" @bind="endDate" />
+                                    </div>
+                                </div>
+                            }
+                            <div class="col-md-3">
+                                <div class="mb-3">
+                                    <label class="form-label">&nbsp;</label>
+                                    <div>
+                                        <button class="btn btn-primary" @onclick="GenerateReport">
+                                            <i class="fas fa-chart-bar"></i> Generate Report
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Task Reports Tab -->
+    <div class="tab-pane fade @(selectedTab == "task" ? "show active" : "")" id="task" role="tabpanel" aria-labelledby="task-tab">
+        <div class="row mb-4">
+            <div class="col-md-12">
+                <div class="card">
+                    <div class="card-header">
+                        <h5>Generate Task Report</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="row">
+                            <div class="col-md-3">
+                                <div class="mb-3">
+                                    <label for="projectSelect" class="form-label">Select Project</label>
+                                    <select id="projectSelect" class="form-control" @onchange="OnProjectSelectionChanged">
+                                        <option value="">-- Select a Project --</option>
+                                        @foreach (var project in availableProjects)
+                                        {
+                                            <option value="@project.ProjectId" selected="@(selectedProjectId == project.ProjectId.ToString())">@project.ProjectName (@project.TaskCount tasks, @project.TotalHours.ToString("F1")h)</option>
+                                        }
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="col-md-3">
+                                <div class="mb-3">
+                                    <label for="taskSelect" class="form-label">Select Task</label>
+                                    <select id="taskSelect" class="form-control" @bind="selectedTaskId" disabled="@(string.IsNullOrEmpty(selectedProjectId))">
+                                        <option value="">@(string.IsNullOrEmpty(selectedProjectId) ? "-- Select Project First --" : "-- Select a Task --")</option>
+                                        @foreach (var task in filteredTasks)
+                                        {
+                                            <option value="@task.TaskId">@task.TaskName (@task.TotalHours.ToString("F1")h)</option>
+                                        }
+                                    </select>
+                                    @if (!filteredTasks.Any() && !string.IsNullOrEmpty(selectedProjectId))
+                                    {
+                                        <small class="text-muted">No tasks with activities found for this project.</small>
+                                    }
+                                </div>
+                            </div>
+                            <div class="col-md-2">
+                                <div class="mb-3">
+                                    <label for="taskStartDate" class="form-label">Start Date (Optional)</label>
+                                    <input type="date" id="taskStartDate" class="form-control" @bind="taskStartDate" />
+                                </div>
+                            </div>
+                            <div class="col-md-2">
+                                <div class="mb-3">
+                                    <label for="taskEndDate" class="form-label">End Date (Optional)</label>
+                                    <input type="date" id="taskEndDate" class="form-control" @bind="taskEndDate" />
+                                </div>
+                            </div>
+                            <div class="col-md-2">
+                                <div class="mb-3">
+                                    <label class="form-label">&nbsp;</label>
+                                    <div>
+                                        <button class="btn btn-primary" @onclick="GenerateTaskReport" disabled="@(string.IsNullOrEmpty(selectedTaskId))">
+                                            <i class="fas fa-tasks"></i> Generate Report
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Charge Code Reports Tab -->
+    <div class="tab-pane fade @(selectedTab == "chargecode" ? "show active" : "")" id="chargecode" role="tabpanel" aria-labelledby="chargecode-tab">
+        <div class="row mb-4">
+            <div class="col-md-12">
+                <div class="card">
+                    <div class="card-header">
+                        <h5>Generate Charge Code Report</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="row">
+                            <div class="col-md-6">
+                                <!-- Charge Code Filters -->
+                                <div class="row mb-3">
+                                    <div class="col-md-6">
+                                        <label for="projectFilter" class="form-label">Filter by Project</label>
+                                        <select id="projectFilter" class="form-control" @bind="selectedProjectFilter">
+                                            <option value="">-- All Projects --</option>
+                                            @foreach (var project in availableProjectsForFilter.OrderBy(p => p))
+                                            {
+                                                <option value="@project">@project</option>
+                                            }
+                                        </select>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label for="chargeCodeSearch" class="form-label">Search Charge Codes</label>
+                                        <input type="text" id="chargeCodeSearch" class="form-control" 
+                                               placeholder="Search by code or name..." 
+                                               @bind="chargeCodeSearchText" 
+                                               @bind:event="oninput" />
+                                    </div>
+                                </div>
+                                
+                                <div class="mb-3">
+                                    <label for="chargeCodeSelect" class="form-label">Select Charge Codes</label>
+                                    <div class="border rounded p-2" style="max-height: 200px; overflow-y: auto;">
+                                        @if (filteredChargeCodes.Any())
+                                        {
+                                            @foreach (var chargeCode in filteredChargeCodes)
+                                            {
+                                                <div class="form-check">
+                                                    <input class="form-check-input" type="checkbox" 
+                                                           id="cc_@(chargeCode.ChargeCodeId)" 
+                                                           @onchange="@(args => OnChargeCodeSelectionChanged(chargeCode.ChargeCodeId, (bool)args.Value!))"
+                                                           checked="@(selectedChargeCodeIds.Contains(chargeCode.ChargeCodeId))" />
+                                                    <label class="form-check-label" for="cc_@(chargeCode.ChargeCodeId)">
+                                                        <strong>@chargeCode.Code</strong> - @chargeCode.Name
+                                                        <br>
+                                                        <small class="text-muted">@chargeCode.ProjectName</small>
+                                                        @if (!chargeCode.HasActivities)
+                                                        {
+                                                            <span class="badge bg-info ms-1">Never Used</span>
+                                                        }
+                                                        @if (!chargeCode.IsActive)
+                                                        {
+                                                            <span class="badge bg-secondary ms-1">Inactive</span>
+                                                        }
+                                                        else if (chargeCode.IsExpired)
+                                                        {
+                                                            <span class="badge bg-danger ms-1">Expired</span>
+                                                        }
+                                                    </label>
+                                                </div>
+                                            }
+                                        }
+                                        else if (availableChargeCodes.Any())
+                                        {
+                                            <p class="text-muted mb-0">No charge codes match the current filters.</p>
+                                        }
+                                        else
+                                        {
+                                            <p class="text-muted mb-0">No charge codes found with activities.</p>
+                                        }
+                                    </div>
+                                    @if (selectedChargeCodeIds.Any())
+                                    {
+                                        <small class="text-muted">@selectedChargeCodeIds.Count charge code(s) selected</small>
+                                    }
+                                    @if (!string.IsNullOrEmpty(selectedProjectFilter) || !string.IsNullOrEmpty(chargeCodeSearchText))
+                                    {
+                                        <div class="mt-2">
+                                            <small class="text-info">Showing @filteredChargeCodes.Count of @availableChargeCodes.Count charge codes</small>
+                                            <button class="btn btn-sm btn-outline-secondary ms-2" @onclick="ClearFilters">
+                                                <i class="fas fa-times"></i> Clear Filters
+                                            </button>
+                                        </div>
+                                    }
+                                </div>
+                            </div>
+                            <div class="col-md-3">
+                                <div class="mb-3">
+                                    <label for="ccStartDate" class="form-label">Start Date (Optional)</label>
+                                    <input type="date" id="ccStartDate" class="form-control" @bind="chargeCodeStartDate" />
+                                </div>
+                            </div>
+                            <div class="col-md-3">
+                                <div class="mb-3">
+                                    <label for="ccEndDate" class="form-label">End Date (Optional)</label>
+                                    <input type="date" id="ccEndDate" class="form-control" @bind="chargeCodeEndDate" />
+                                </div>
+                            </div>
+                        </div>
+                        <div class="row">
+                            <div class="col-md-12">
+                                <button class="btn btn-primary" @onclick="GenerateChargeCodeReport" disabled="@(!selectedChargeCodeIds.Any())">
+                                    <i class="fas fa-barcode"></i> Generate Report
+                                </button>
+                                @if (selectedChargeCodeIds.Any())
+                                {
+                                    <button class="btn btn-outline-secondary ms-2" @onclick="ClearChargeCodeSelection">
+                                        <i class="fas fa-times"></i> Clear Selection
+                                    </button>
+                                }
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@if (isLoading)
+{
+    <div class="text-center">
+        <div class="spinner-border" role="status">
+            <span class="visually-hidden">Generating report...</span>
+        </div>
+        <p>Generating report...</p>
+    </div>
+}
+else if (currentReport != null)
+{
+    <div class="card">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <h5>
+                Activity Report: @currentReport.StartDate.ToString("MMM dd, yyyy") 
+                @if (currentReport.StartDate != currentReport.EndDate)
+                {
+                    <text> - @currentReport.EndDate.ToString("MMM dd, yyyy")</text>
+                }
+            </h5>
+            <div>
+                <button class="btn btn-sm btn-outline-secondary" @onclick="ExportToCsv">
+                    <i class="fas fa-download"></i> Export CSV
+                </button>
+                <button class="btn btn-sm btn-outline-primary" @onclick="PrintReport">
+                    <i class="fas fa-print"></i> Print
+                </button>
+            </div>
+        </div>
+        <div class="card-body">
+            <!-- Summary -->
+            <div class="row mb-4">
+                <div class="col-md-3">
+                    <div class="card text-center bg-light">
+                        <div class="card-body">
+                            <h6 class="card-title">Total Activities</h6>
+                            <h4 class="text-primary">@currentReport.Activities.Count</h4>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="card text-center bg-light">
+                        <div class="card-body">
+                            <h6 class="card-title">Total Hours</h6>
+                            <h4 class="text-success">@currentReport.TotalHours.ToString("F1")</h4>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="card text-center bg-light">
+                        <div class="card-body">
+                            <h6 class="card-title">Projects</h6>
+                            <h4 class="text-info">@currentReport.Activities.Select(a => a.Task.ProjectId).Distinct().Count()</h4>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="card text-center bg-light">
+                        <div class="card-body">
+                            <h6 class="card-title">Charge Codes</h6>
+                            <h4 class="text-warning">@currentReport.Activities.SelectMany(a => a.ActivityChargeCodes).Select(acc => acc.ChargeCodeId).Distinct().Count()</h4>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            @if (currentReport.Activities.Any())
+            {
+                <!-- Charge Code Summary -->
+                <div class="mb-4">
+                    <h6>Charge Code Summary</h6>
+                    <div class="table-responsive">
+                        <table class="table table-sm">
+                            <thead>
+                                <tr>
+                                    <th>Charge Code</th>
+                                    <th>Description</th>
+                                    <th>Hours</th>
+                                    <th>Activities</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var summary in chargeCodeSummary.OrderBy(s => s.ChargeCode))
+                                {
+                                    <tr>
+                                        <td><strong>@summary.ChargeCode</strong></td>
+                                        <td>@summary.ChargeCodeName</td>
+                                        <td>@summary.TotalHours.ToString("F1")</td>
+                                        <td>@summary.ActivityCount</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Detailed Activities -->
+                <div>
+                    <h6>Detailed Activities</h6>
+                    <div class="table-responsive">
+                        <table class="table table-striped">
+                            <thead>
+                                <tr>
+                                    <th>Date</th>
+                                    <th>Activity</th>
+                                    <th>Task</th>
+                                    <th>Project</th>
+                                    <th>Duration</th>
+                                    <th>Charge Codes</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var activity in currentReport.Activities.OrderBy(a => a.ActivityDate).ThenBy(a => a.Name))
+                                {
+                                    <tr>
+                                        <td>@activity.ActivityDate.ToString("MM/dd/yyyy")</td>
+                                        <td>
+                                            <strong>@activity.Name</strong>
+                                            @if (!string.IsNullOrEmpty(activity.Description))
+                                            {
+                                                <br><small class="text-muted">@activity.Description</small>
+                                            }
+                                        </td>
+                                        <td>@activity.Task.Name</td>
+                                        <td>@activity.Task.Project.Name</td>
+                                        <td>@activity.DurationHours.ToString("F1")h</td>
+                                        <td>
+                                            @foreach (var acc in activity.ActivityChargeCodes)
+                                            {
+                                                <div class="small">
+                                                    @acc.ChargeCode.Code: @acc.AllocatedHours.ToString("F2")h
+                                                </div>
+                                            }
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            }
+            else
+            {
+                <div class="alert alert-info">
+                    <h6>No Activities Found</h6>
+                    <p>No activities were found for the selected date range.</p>
+                </div>
+            }
+
+            @if (projectPercentages.Any())
+            {
+                <div class="card mt-4">
+                    <div class="card-header">
+                        <h6>Work Percentage by Project</h6>
+                    </div>
+                    <div class="card-body">
+                        <table class="table table-bordered table-striped">
+                            <thead>
+                                <tr>
+                                    <th>Project</th>
+                                    <th>Total Hours</th>
+                                    <th>Percentage</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var p in projectPercentages)
+                                {
+                                    <tr>
+                                        <td>@p.ProjectName</td>
+                                        <td>@p.TotalHours.ToString("F1")</td>
+                                        <td>@p.Percentage.ToString("F2")%</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            }
+        </div>
+    </div>
+}
+else if (currentTaskReport != null)
+{
+    <div class="card">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <h5>
+                Task Report: @currentTaskReport.TaskName
+                @if (currentTaskReport.StartDate != currentTaskReport.EndDate)
+                {
+                    <text> (@currentTaskReport.StartDate.ToString("MMM dd, yyyy") - @currentTaskReport.EndDate.ToString("MMM dd, yyyy"))</text>
+                }
+                else if (currentTaskReport.Activities.Any())
+                {
+                    <text> (All Time)</text>
+                }
+            </h5>
+            <div>
+                <button class="btn btn-sm btn-outline-secondary" @onclick="ExportToCsv">
+                    <i class="fas fa-download"></i> Export CSV
+                </button>
+                <button class="btn btn-sm btn-outline-primary" @onclick="PrintReport">
+                    <i class="fas fa-print"></i> Print
+                </button>
+            </div>
+        </div>
+        <div class="card-body">
+            <!-- Task Info -->
+            <div class="row mb-4">
+                <div class="col-md-6">
+                    <div class="card bg-light">
+                        <div class="card-body">
+                            <h6 class="card-title">Task Information</h6>
+                            <p class="mb-1"><strong>Task:</strong> @currentTaskReport.TaskName</p>
+                            <p class="mb-0"><strong>Project:</strong> @currentTaskReport.ProjectName</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="card text-center bg-light">
+                                <div class="card-body">
+                                    <h6 class="card-title">Total Activities</h6>
+                                    <h4 class="text-primary">@currentTaskReport.Activities.Count</h4>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="card text-center bg-light">
+                                <div class="card-body">
+                                    <h6 class="card-title">Total Hours</h6>
+                                    <h4 class="text-success">@currentTaskReport.TotalHours.ToString("F1")</h4>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            @if (currentTaskReport.Activities.Any())
+            {
+                @if (chargeCodeSummary.Any())
+                {
+                    <!-- Charge Code Summary -->
+                    <div class="mb-4">
+                        <h6>Charge Code Summary</h6>
+                        <div class="table-responsive">
+                            <table class="table table-sm">
+                                <thead>
+                                    <tr>
+                                        <th>Charge Code</th>
+                                        <th>Description</th>
+                                        <th>Hours</th>
+                                        <th>Activities</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var summary in chargeCodeSummary.OrderBy(s => s.ChargeCode))
+                                    {
+                                        <tr>
+                                            <td><strong>@summary.ChargeCode</strong></td>
+                                            <td>@summary.ChargeCodeName</td>
+                                            <td>@summary.TotalHours.ToString("F1")</td>
+                                            <td>@summary.ActivityCount</td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                }
+
+                <!-- Detailed Activities -->
+                <div>
+                    <h6>Task Activities</h6>
+                    <div class="table-responsive">
+                        <table class="table table-striped">
+                            <thead>
+                                <tr>
+                                    <th>Date</th>
+                                    <th>Activity</th>
+                                    <th>Duration</th>
+                                    <th>Charge Codes</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var activity in currentTaskReport.Activities.OrderBy(a => a.ActivityDate).ThenBy(a => a.Name))
+                                {
+                                    <tr>
+                                        <td>@activity.ActivityDate.ToString("MM/dd/yyyy")</td>
+                                        <td>
+                                            <strong>@activity.Name</strong>
+                                            @if (!string.IsNullOrEmpty(activity.Description))
+                                            {
+                                                <br><small class="text-muted">@activity.Description</small>
+                                            }
+                                        </td>
+                                        <td>@activity.DurationHours.ToString("F1")h</td>
+                                        <td>
+                                            @if (activity.ActivityChargeCodes.Any())
+                                            {
+                                                @foreach (var acc in activity.ActivityChargeCodes)
+                                                {
+                                                    <div class="small">
+                                                        @acc.ChargeCode.Code: @acc.AllocatedHours.ToString("F2")h
+                                                    </div>
+                                                }
+                                            }
+                                            else
+                                            {
+                                                <span class="text-muted">No charge codes</span>
+                                            }
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            }
+            else
+            {
+                <div class="alert alert-info">
+                    <h6>No Activities Found</h6>
+                    <p>No activities were found for this task in the selected date range.</p>
+                </div>
+            }
+        </div>
+    </div>
+}
+else if (currentChargeCodeReport != null)
+{
+    <div class="card">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <h5>
+                Charge Code Report: @string.Join(", ", currentChargeCodeReport.SelectedChargeCodes.Select(cc => cc.Code))
+                @if (currentChargeCodeReport.StartDate != currentChargeCodeReport.EndDate)
+                {
+                    <text> (@currentChargeCodeReport.StartDate.ToString("MMM dd, yyyy") - @currentChargeCodeReport.EndDate.ToString("MMM dd, yyyy"))</text>
+                }
+                else if (currentChargeCodeReport.Activities.Any())
+                {
+                    <text> (All Time)</text>
+                }
+            </h5>
+            <div>
+                <button class="btn btn-sm btn-outline-secondary" @onclick="ExportToCsv">
+                    <i class="fas fa-download"></i> Export CSV
+                </button>
+                <button class="btn btn-sm btn-outline-primary" @onclick="PrintReport">
+                    <i class="fas fa-print"></i> Print
+                </button>
+            </div>
+        </div>
+        <div class="card-body">
+            <!-- Selected Charge Codes Info -->
+            <div class="row mb-4">
+                <div class="col-md-12">
+                    <div class="card bg-light">
+                        <div class="card-body">
+                            <h6 class="card-title">Selected Charge Codes</h6>
+                            <div class="row">
+                                @foreach (var cc in currentChargeCodeReport.SelectedChargeCodes)
+                                {
+                                    <div class="col-md-6 mb-2">
+                                        <strong>@cc.Code</strong> - @cc.Name
+                                        <br>
+                                        <small class="text-muted">@cc.ProjectName</small>
+                                        @if (!cc.IsActive)
+                                        {
+                                            <span class="badge bg-secondary ms-1">Inactive</span>
+                                        }
+                                        else if (cc.IsExpired)
+                                        {
+                                            <span class="badge bg-danger ms-1">Expired</span>
+                                        }
+                                        else
+                                        {
+                                            <span class="badge bg-success ms-1">Active</span>
+                                        }
+                                    </div>
+                                }
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Summary Cards -->
+            <div class="row mb-4">
+                <div class="col-md-3">
+                    <div class="card text-center bg-light">
+                        <div class="card-body">
+                            <h6 class="card-title">Total Activities</h6>
+                            <h4 class="text-primary">@currentChargeCodeReport.Activities.Count</h4>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="card text-center bg-light">
+                        <div class="card-body">
+                            <h6 class="card-title">Total Hours</h6>
+                            <h4 class="text-success">@currentChargeCodeReport.TotalHours.ToString("F1")</h4>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="card text-center bg-light">
+                        <div class="card-body">
+                            <h6 class="card-title">Projects</h6>
+                            <h4 class="text-info">@currentChargeCodeReport.Activities.Select(a => a.Task.ProjectId).Distinct().Count()</h4>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="card text-center bg-light">
+                        <div class="card-body">
+                            <h6 class="card-title">Tasks</h6>
+                            <h4 class="text-warning">@currentChargeCodeReport.Activities.Select(a => a.TaskId).Distinct().Count()</h4>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            @if (currentChargeCodeReport.Activities.Any())
+            {
+                @if (currentChargeCodeReport.ChargeCodeSummaries.Any())
+                {
+                    <!-- Charge Code Summary -->
+                    <div class="mb-4">
+                        <h6>Charge Code Summary</h6>
+                        <div class="table-responsive">
+                            <table class="table table-sm">
+                                <thead>
+                                    <tr>
+                                        <th>Charge Code</th>
+                                        <th>Description</th>
+                                        <th>Hours</th>
+                                        <th>Activities</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var summary in currentChargeCodeReport.ChargeCodeSummaries.OrderBy(s => s.ChargeCode))
+                                    {
+                                        <tr>
+                                            <td><strong>@summary.ChargeCode</strong></td>
+                                            <td>@summary.ChargeCodeName</td>
+                                            <td>@summary.TotalHours.ToString("F1")</td>
+                                            <td>@summary.ActivityCount</td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                }
+
+                <!-- Detailed Activities -->
+                <div>
+                    <h6>Activities for Selected Charge Codes</h6>
+                    <div class="table-responsive">
+                        <table class="table table-striped">
+                            <thead>
+                                <tr>
+                                    <th>Date</th>
+                                    <th>Activity</th>
+                                    <th>Task</th>
+                                    <th>Project</th>
+                                    <th>Duration</th>
+                                    <th>Charge Codes</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var activity in currentChargeCodeReport.Activities.OrderBy(a => a.ActivityDate).ThenBy(a => a.Name))
+                                {
+                                    <tr>
+                                        <td>@activity.ActivityDate.ToString("MM/dd/yyyy")</td>
+                                        <td>
+                                            <strong>@activity.Name</strong>
+                                            @if (!string.IsNullOrEmpty(activity.Description))
+                                            {
+                                                <br><small class="text-muted">@activity.Description</small>
+                                            }
+                                        </td>
+                                        <td>@activity.Task.Name</td>
+                                        <td>@activity.Task.Project.Name</td>
+                                        <td>@activity.DurationHours.ToString("F1")h</td>
+                                        <td>
+                                            @foreach (var acc in activity.ActivityChargeCodes.Where(acc => selectedChargeCodeIds.Contains(acc.ChargeCodeId)))
+                                            {
+                                                <div class="small">
+                                                    <strong>@acc.ChargeCode.Code</strong>: @acc.AllocatedHours.ToString("F2")h
+                                                </div>
+                                            }
+                                            @if (activity.ActivityChargeCodes.Any(acc => !selectedChargeCodeIds.Contains(acc.ChargeCodeId)))
+                                            {
+                                                <small class="text-muted">+ other charge codes</small>
+                                            }
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            }
+            else
+            {
+                <div class="alert alert-info">
+                    <h6>No Activities Found</h6>
+                    <p>No activities were found for the selected charge codes in the specified date range.</p>
+                </div>
+            }
+        </div>
+    </div>
+}
+
+@code {
+    private ActivityReport? currentReport;
+    private TaskActivityReport? currentTaskReport;
+    private ChargeCodeReport? currentChargeCodeReport;
+    private List<ChargeCodeSummary> chargeCodeSummary = new();
+    private List<ProjectWorkPercentage> projectPercentages = new();
+    private List<TaskSummary> availableTasks = new();
+    private List<ProjectSummary> availableProjects = new();
+    private List<TaskSummary> filteredTasks = new();
+    private List<ChargeCodeOption> availableChargeCodes = new();
+    private List<ChargeCodeOption> filteredChargeCodes = new();
+    private List<string> availableProjectsForFilter = new();
+    private List<int> selectedChargeCodeIds = new();
+    private string _selectedProjectFilter = "";
+    private string selectedProjectFilter 
+    {
+        get => _selectedProjectFilter;
+        set
+        {
+            _selectedProjectFilter = value;
+            ApplyChargeCodeFilters();
+        }
+    }
+    
+    private string _chargeCodeSearchText = "";
+    private string chargeCodeSearchText 
+    {
+        get => _chargeCodeSearchText;
+        set
+        {
+            _chargeCodeSearchText = value;
+            ApplyChargeCodeFilters();
+        }
+    }
+    private bool isLoading = false;
+    private string? currentUserId;
+    private string selectedReportType = "daily";
+    private string selectedTab = "activity";
+    private string selectedProjectId = "";
+    private string selectedTaskId = "";
+    private DateTime startDate = DateTime.Today;
+    private DateTime endDate = DateTime.Today;
+    private DateTime? taskStartDate;
+    private DateTime? taskEndDate;
+    private DateTime? chargeCodeStartDate;
+    private DateTime? chargeCodeEndDate;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+        if (authState.User.Identity?.IsAuthenticated == true)
+        {
+            var user = await UserManager.GetUserAsync(authState.User);
+            if (user != null)
+            {
+                currentUserId = user.Id;
+                await LoadAvailableProjects();
+                await LoadAvailableTasks();
+                await LoadAvailableChargeCodes();
+            }
+        }
+    }
+
+    private async Task LoadAvailableProjects()
+    {
+        if (currentUserId == null) return;
+
+        try
+        {
+            availableProjects = await ReportService.GetUserProjectsWithActivitiesAsync(currentUserId);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading projects: {ex.Message}");
+        }
+    }
+
+    private async Task LoadAvailableTasks()
+    {
+        if (currentUserId == null) return;
+
+        try
+        {
+            availableTasks = await ReportService.GetUserTasksWithActivitiesAsync(currentUserId);
+            FilterTasksByProject();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading tasks: {ex.Message}");
+        }
+    }
+
+    private void FilterTasksByProject()
+    {
+        if (string.IsNullOrEmpty(selectedProjectId))
+        {
+            filteredTasks = new List<TaskSummary>();
+        }
+        else if (int.TryParse(selectedProjectId, out int projectId))
+        {
+            filteredTasks = availableTasks.Where(t => t.ProjectId == projectId).ToList();
+        }
+        else
+        {
+            filteredTasks = new List<TaskSummary>();
+        }
+    }
+
+    private void OnProjectSelectionChanged(ChangeEventArgs e)
+    {
+        selectedProjectId = e.Value?.ToString() ?? "";
+        selectedTaskId = ""; // Clear task selection when project changes
+        FilterTasksByProject();
+        StateHasChanged();
+    }
+
+    private void OnProjectChanged()
+    {
+        selectedTaskId = ""; // Clear task selection when project changes
+        FilterTasksByProject();
+        StateHasChanged();
+    }
+
+    private void SelectActivityTab()
+    {
+        selectedTab = "activity";
+        currentTaskReport = null;
+        currentChargeCodeReport = null;
+    }
+
+    private void SelectTaskTab()
+    {
+        selectedTab = "task";
+        currentReport = null;
+        currentChargeCodeReport = null;
+    }
+
+    private void SelectChargeCodeTab()
+    {
+        selectedTab = "chargecode";
+        currentReport = null;
+        currentTaskReport = null;
+    }
+
+    private async Task LoadAvailableChargeCodes()
+    {
+        if (currentUserId == null) return;
+
+        try
+        {
+            availableChargeCodes = await ReportService.GetUserChargeCodesWithActivitiesAsync(currentUserId);
+            availableProjectsForFilter = availableChargeCodes.Select(cc => cc.ProjectName).Distinct().ToList();
+            ApplyChargeCodeFilters();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading charge codes: {ex.Message}");
+        }
+    }
+
+    private void OnChargeCodeSelectionChanged(int chargeCodeId, bool isSelected)
+    {
+        if (isSelected)
+        {
+            if (!selectedChargeCodeIds.Contains(chargeCodeId))
+            {
+                selectedChargeCodeIds.Add(chargeCodeId);
+            }
+        }
+        else
+        {
+            selectedChargeCodeIds.Remove(chargeCodeId);
+        }
+        StateHasChanged();
+    }
+
+    private void ApplyChargeCodeFilters()
+    {
+        filteredChargeCodes = availableChargeCodes.Where(cc =>
+        {
+            // Project filter
+            bool projectMatch = string.IsNullOrEmpty(selectedProjectFilter) || 
+                              cc.ProjectName.Equals(selectedProjectFilter, StringComparison.OrdinalIgnoreCase);
+            
+            // Search text filter
+            bool searchMatch = string.IsNullOrEmpty(chargeCodeSearchText) ||
+                             cc.Code.Contains(chargeCodeSearchText, StringComparison.OrdinalIgnoreCase) ||
+                             cc.Name.Contains(chargeCodeSearchText, StringComparison.OrdinalIgnoreCase);
+            
+            return projectMatch && searchMatch;
+        }).ToList();
+        
+        StateHasChanged();
+    }
+
+    private void ClearFilters()
+    {
+        _selectedProjectFilter = "";
+        _chargeCodeSearchText = "";
+        ApplyChargeCodeFilters();
+    }
+
+    private void ClearChargeCodeSelection()
+    {
+        selectedChargeCodeIds.Clear();
+        StateHasChanged();
+    }
+
+    private async Task GenerateChargeCodeReport()
+    {
+        if (currentUserId == null || !selectedChargeCodeIds.Any()) return;
+
+        isLoading = true;
+        currentReport = null; // Clear other reports
+        currentTaskReport = null;
+        try
+        {
+            currentChargeCodeReport = await ReportService.GenerateChargeCodeReportAsync(
+                currentUserId, 
+                selectedChargeCodeIds, 
+                chargeCodeStartDate, 
+                chargeCodeEndDate);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error generating charge code report: {ex.Message}");
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private async Task GenerateReport()
+    {
+        if (currentUserId == null) return;
+
+        isLoading = true;
+        currentTaskReport = null; // Clear task report when generating activity report
+        currentChargeCodeReport = null; // Clear charge code report when generating activity report
+        try
+        {
+            switch (selectedReportType)
+            {
+                case "daily":
+                    currentReport = await ReportService.GenerateDailyReportAsync(currentUserId, startDate);
+                    break;
+                case "weekly":
+                    var weekStart = startDate.AddDays(-(int)startDate.DayOfWeek + 1);
+                    currentReport = await ReportService.GenerateWeeklyReportAsync(currentUserId, weekStart);
+                    break;
+                case "custom":
+                    currentReport = await ReportService.GenerateCustomReportAsync(currentUserId, startDate, endDate);
+                    break;
+            }
+
+            if (currentReport != null)
+            {
+                var rawChargeCodeSummary = await ReportService.GetChargeCodeSummaryAsync(currentUserId, currentReport.StartDate, currentReport.EndDate);
+                chargeCodeSummary = ReportService.AdjustChargeCodeSummaryForDisplay(rawChargeCodeSummary);
+                projectPercentages = await ReportService.GetProjectWorkPercentagesAsync(currentUserId, currentReport.StartDate, currentReport.EndDate);
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error generating report: {ex.Message}");
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private async Task GenerateTaskReport()
+    {
+        if (currentUserId == null || string.IsNullOrEmpty(selectedTaskId)) return;
+
+        if (!int.TryParse(selectedTaskId, out int taskId)) return;
+
+        isLoading = true;
+        currentReport = null; // Clear activity report when generating task report
+        currentChargeCodeReport = null; // Clear charge code report when generating task report
+        try
+        {
+            currentTaskReport = await ReportService.GenerateTaskReportAsync(currentUserId, taskId, taskStartDate, taskEndDate);
+
+            if (currentTaskReport != null)
+            {
+                var rawChargeCodeSummary = await ReportService.GetTaskChargeCodeSummaryAsync(currentUserId, taskId, taskStartDate, taskEndDate);
+                chargeCodeSummary = ReportService.AdjustChargeCodeSummaryForDisplay(rawChargeCodeSummary);
+                projectPercentages = new(); // Clear project percentages for task reports
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error generating task report: {ex.Message}");
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private void ExportToCsv()
+    {
+        if (currentReport == null && currentTaskReport == null && currentChargeCodeReport == null) return;
+        
+        // In a real application, you would implement CSV export functionality
+        // This would typically involve creating a CSV file and triggering a download
+        Console.WriteLine("CSV export functionality would be implemented here");
+    }
+
+    private void PrintReport()
+    {
+        // In a real application, you would implement print functionality
+        // This could use JavaScript to trigger the browser's print dialog
+        Console.WriteLine("Print functionality would be implemented here");
+    }
+}
