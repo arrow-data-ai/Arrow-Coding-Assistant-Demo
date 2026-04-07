@@ -110,7 +110,7 @@ with gr.Blocks(title="AI Coding Assistant", fill_height=True) as demo:
 
     # Display retrieved sources (only shown when RAG is enabled)
     with gr.Accordion("📚 Retrieved Sources", open=False):
-        sources_display = gr.Markdown("No sources retrieved yet. Ask a migration question with RAG enabled to see retrieved monolith code and pattern docs.")
+        sources_display = gr.Markdown("No sources retrieved yet. Ask a question with RAG enabled to see retrieved code and docs.")
         
         def update_sources_display(rag_enabled):
             """Update the sources display with the last retrieved documents.
@@ -123,7 +123,7 @@ with gr.Blocks(title="AI Coding Assistant", fill_height=True) as demo:
             
             sources = get_retrieved_sources()
             if not sources:
-                return "No sources retrieved yet. Ask a migration question with RAG enabled to see retrieved monolith code and pattern docs."
+                return "No sources retrieved yet. Ask a question with RAG enabled to see retrieved code and docs."
             
             markdown = "### Source Files:\n\n"
             for i, (path, preview) in enumerate(sources, 1):

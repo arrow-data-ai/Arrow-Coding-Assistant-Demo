@@ -1,86 +1,52 @@
-## Arrow Local Code Assistant Engine & Gradio UI
+# AI Coding Assistant — Template
 
-This repo contains:
+A **local RAG-powered coding assistant** that connects to a self-hosted
+[vLLM](https://github.com/vllm-project/vllm) deployment and serves an
+interactive Gradio chat UI. Drop your codebase into `knowledge-base/` and the
+assistant will ground its answers in your actual source code and docs.
 
-- A **local code assistant engine** that connects to a self‑hosted vLLM deployment of **`nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16`** (`local_code_assistant_engine.py`).
-- A **Gradio web UI** for interactive chatting with the assistant (`coding_assistant.py`).
+## What's included
 
-- **Raw LLM calls** to the local vLLM OpenAI‑compatible endpoint.
-- **RAG (Retrieval‑Augmented Generation)** over documents in the `knowledge-base` directory using FAISS and HuggingFace embeddings.
+| File | Purpose |
+|------|---------|
+| `local_code_assistant_engine.py` | LLM client, FAISS RAG pipeline, metrics |
+| `coding_assistant.py` | Gradio web UI (chat, RAG toggle, source viewer) |
+| `Dockerfile` | Multi-stage image for the Gradio app |
+| `docker-compose.yml` | Full-stack deploy: vLLM **+** Gradio app |
+| `docker-compose.vllm.yml` | Standalone vLLM server (if running the app on the host) |
+| `knowledge-base/` | Drop your project source code / docs here |
+| `requirements.txt` | Python dependencies |
 
-The backend engine uses `nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16` served via vLLM with tensor parallelism.
-
----
-
-## 1. Prerequisites
-
-- **Python** 3.10+ recommended.
-- **GPU** with at least 80GB VRAM (e.g., A100 80GB). A DGX A100 with 2+ GPUs is recommended for longer contexts.
-- **Docker** (if you are running vLLM in a container).
-
-Python dependencies (installed via `requirements.txt`) include:
-
-- `langchain`, `langchain-openai`, `langchain-community`, `langchain-huggingface`
-- `faiss-cpu` or `faiss-gpu`
-- `pypdf`
+A **sample knowledge base** (`knowledge-base/sample-app/`) is included so
+you can test the RAG pipeline out of the box before plugging in your own code.
 
 ---
 
-## 2. Python environment setup (uv)
+## Quick start (Docker)
 
-This project is set up to use **`uv`** for fast, reproducible Python environments and dependency management.
-
-1. **Install `uv`** (if you don't have it):
-
-```bash
-curl -LsSf https://astral.sh/uv/install.sh | sh
-```
-
-2. **Create and use a project environment with `uv`**:
-
-From the repo root:
-
-```bash
-# Create a Python 3.10+ environment (once)
-uv venv .venv --python 3.10
-
-# Activate it
-source .venv/bin/activate
-```
-
-3. **Install dependencies with `uv`**:
-
-If you have a `requirements.txt`:
-
-```bash
-uv pip install -r requirements.txt
-```
-
-Or, to install the core dependencies directly:
-
-```bash
-uv pip install "langchain-openai>=0.1.0" "langchain-community>=0.0.30" \
-               "langchain-huggingface>=0.0.8" faiss-cpu pypdf gradio gradio-toggle
-```
-
----
-
-## 3. Docker deployment (recommended)
-
-The easiest way to run the full stack is with Docker Compose. A single
-command starts both the vLLM model server **and** the Gradio UI.
-
-### 3.1 Create a `.env` file
+### 1. Create a `.env` file
 
 ```bash
 cat > .env << 'EOF'
 HF_TOKEN=your_huggingface_token_here
-# Set to the number of GPUs available (default 8)
-TENSOR_PARALLEL_SIZE=8
+TENSOR_PARALLEL_SIZE=2        # number of GPUs for vLLM tensor parallelism
 EOF
 ```
 
-### 3.2 Start everything
+### 2. Add your code to the knowledge base
+
+Replace or extend the sample files in `knowledge-base/` with your own project:
+
+```bash
+# Example: clone your repo into the knowledge base
+git clone https://github.com/your-org/your-project.git knowledge-base/your-project
+```
+
+Supported file types: `.py`, `.js`, `.ts`, `.java`, `.go`, `.rs`, `.cs`, `.sql`,
+`.json`, `.yaml`, `.md`, `.txt`, `.pdf`, and
+[many more](local_code_assistant_engine.py).
+
+### 3. Start everything
 
 ```bash
 docker compose up -d
@@ -88,14 +54,14 @@ docker compose up -d
 
 This will:
 
-1. Pull the `vllm/vllm-openai` image and start serving Nemotron-3 Nano 30B.
+1. Pull `vllm/vllm-openai` and start serving the model.
 2. Build the `coding-assistant` image from the repo `Dockerfile`.
-3. Wait for vLLM to become healthy before starting the Gradio UI.
+3. Wait for vLLM to pass its health check, then start the Gradio UI.
 
-The Gradio UI will be available at **http://localhost:7860** once vLLM finishes
-loading (the first start downloads ~60 GB of model weights).
+Open **http://localhost:7860** once vLLM finishes loading (first start
+downloads ~60 GB of model weights).
 
-### 3.3 Useful commands
+### 4. Useful commands
 
 ```bash
 # Watch vLLM model loading progress
@@ -106,12 +72,93 @@ docker compose up -d --build coding-assistant
 
 # Stop everything
 docker compose down
-
-# Run only the vLLM server (run the Gradio app on the host)
-docker compose up -d vllm
 ```
 
-### 3.4 Building and pushing the assistant image manually
+---
+
+## Manual setup (without Docker)
+
+### 1. Prerequisites
+
+- **Python 3.10+**
+- **GPU** with sufficient VRAM for the model (A100 80 GB recommended)
+- **Docker** (for the vLLM server)
+
+### 2. Python environment
+
+```bash
+uv venv .venv --python 3.10
+source .venv/bin/activate
+uv pip install -r requirements.txt
+```
+
+### 3. Start vLLM
+
+```bash
+# Create .env with your HF token
+echo "HF_TOKEN=hf_..." > .env
+
+docker compose -f docker-compose.vllm.yml up -d
+docker compose -f docker-compose.vllm.yml logs -f nemotron-3-nano
+```
+
+### 4. Run the Gradio UI
+
+```bash
+python coding_assistant.py
+# → http://localhost:7860
+```
+
+---
+
+## Configuration
+
+| Environment variable | Description | Default |
+|----------------------|-------------|---------|
+| `VLLM_BASE_URL` | OpenAI-compatible endpoint | `http://localhost:8000/v1` |
+| `MODEL_ID` | Model served by vLLM | `nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16` |
+| `HF_TOKEN` | Hugging Face token (for gated models) | *(required)* |
+| `TENSOR_PARALLEL_SIZE` | GPUs for tensor parallelism | `8` |
+
+---
+
+## Preparing your knowledge base
+
+Place source code and documentation into `knowledge-base/`. The RAG engine
+will recursively scan for supported files, split them into chunks, and build
+an in-memory FAISS index on first query (and rebuild automatically when files
+change).
+
+```
+knowledge-base/
+├── your-project/
+│   ├── src/
+│   ├── docs/
+│   └── README.md
+└── another-project/
+    └── ...
+```
+
+---
+
+## Using the engine programmatically
+
+```python
+from local_code_assistant_engine import vllm_rag_inference, vllm_llm_inference
+
+# Plain LLM call (no RAG)
+res = vllm_llm_inference(model="any", query="Explain Python decorators.")
+print(res["response"])
+
+# RAG-augmented call grounded in your knowledge base
+rag_res = vllm_rag_inference(model="any", query="How does authentication work in our API?")
+print(rag_res["response"])
+print(rag_res["metrics"])  # {'tokens': ..., 'time': ..., 'tps': ...}
+```
+
+---
+
+## Building and pushing the Docker image
 
 ```bash
 docker build -t coding-assistant .
@@ -121,144 +168,17 @@ docker push ghcr.io/<your-github-user>/coding-assistant:latest
 
 ---
 
-## 4. Manual setup (without Docker)
+## Creating a branch for your project
 
-If you prefer running the Gradio app directly on the host, follow the steps
-below.
-
-### 4.1 Deploying Nemotron-3 Nano with vLLM
-
-The helper code assumes a local OpenAI‑compatible HTTP endpoint at:
-
-- **Base URL**: `http://localhost:8000/v1`
-- **Model name**: `nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16`
-
-### 4.2 Configure your Hugging Face token via `.env`
-
-Create a `.env` file in the repo root:
+This `main` branch is a **template**. To create a customized version for a
+specific project:
 
 ```bash
-cat > .env << 'EOF'
-HF_TOKEN=your_huggingface_token_here
-EOF
+git checkout -b my-project
+# Replace knowledge-base/ contents with your codebase
+# Customize prompts in local_code_assistant_engine.py if desired
+git add -A && git commit -m "my-project: add knowledge base and customize prompts"
+git push -u origin my-project
 ```
 
-Make sure `.env` is **not** committed to git (it should already be in `.gitignore`).
-
-### 4.3 Start vLLM with Docker Compose
-
-From the repo root, run:
-
-```bash
-docker compose -f docker-compose.vllm.yml up -d
-```
-
-This launches Nemotron-3 Nano 30B with tensor parallelism. The first run will download ~60 GB of model weights.
-
-Monitor progress with:
-
-```bash
-docker compose -f docker-compose.vllm.yml logs -f nemotron-3-nano
-```
-
-Leave this container running; the Python engine will call it through the OpenAI‑compatible API.
-
----
-
-## 5. Preparing the knowledge base
-
-Place documents into the `knowledge-base` directory in the repo root. Supported formats:
-
-- `.txt`
-- `.md`
-- `.pdf`
-- `.jsonl` (with a `text` field per line)
-
-The RAG helper will:
-
-- Load all supported files.
-- Split them into chunks.
-- Build an in‑memory FAISS index for each run.
-
----
-
-## 6. Using the engine
-
-In your own Python code, you can import and call the helpers:
-
-```python
-from local_code_assistant_engine import vllm_rag_inference, vllm_llm_inference
-
-# Plain LLM call (no RAG)
-res = vllm_llm_inference(model="any-string", query="Explain std::unique_ptr in C++.")
-print(res["response"])
-
-# RAG‑augmented call over knowledge-base docs
-rag_res = vllm_rag_inference(model="any-string", query="How does our internal build system work?")
-print(rag_res["response"])
-print(rag_res["metrics"])
-```
-
-Notes:
-
-- The `model` argument is ignored; the engine always uses `nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16`.
-- Metrics include token estimate, elapsed time, and tokens‑per‑second.
-
----
-
-## 7. Running ad‑hoc tests (engine only)
-
-From the repo root, with vLLM running and venv activated, you can start a Python REPL:
-
-```bash
-python
-```
-
-Then:
-
-```python
-from local_code_assistant_engine import vllm_llm_inference
-out = vllm_llm_inference("nemotron", "Write a simple C++ RAII wrapper example.")
-print(out["response"])
-print(out["metrics"])
-```
-
-If everything is wired correctly, you should see a C++ answer plus timing statistics.
-
----
-
-## 8. Running the Gradio UI
-
-The main interactive experience is provided by `coding_assistant.py`, which builds a Gradio app with:
-
-- A **model dropdown** (shows "Nemotron-3 Nano 30B").
-- A **"Use Knowledge Base" toggle** (enables/disables RAG over the `knowledge-base` folder).
-- A **Demo Prompts** accordion for quickly inserting example questions.
-- A **Retrieved Sources** accordion that shows which files were used when answering RAG queries.
-
-To launch the UI (with vLLM already running on port 8000 and your venv activated):
-
-```bash
-python coding_assistant.py
-```
-
-By default, this will start Gradio on:
-
-- **Host**: `0.0.0.0`
-- **Port**: `7860`
-
-Open `http://localhost:7860` in your browser to use the assistant.
-
-### RAG vs non‑RAG modes
-
-- **RAG enabled ("Use Knowledge Base" ON)**:
-  - Queries go through `vllm_rag_inference`, which:
-    - Retrieves up to 4 relevant chunks from `knowledge-base`.
-    - Sends the retrieved context as part of a system + user message pair to Nemotron-3 Nano.
-  - The UI's **Retrieved Sources** panel lists the files and previews used.
-
-- **RAG disabled ("Use Knowledge Base" OFF)**:
-  - The engine clears any stored sources and calls `vllm_llm_inference` directly.
-  - Answers are based only on the model's built‑in knowledge; no document context is used.
-
-In both cases, responses are streamed character‑by‑character in the chat and end with a short performance summary (tokens, time, and tokens/sec).
+See the `c#` branch for an example of a project-specific configuration.

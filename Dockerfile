@@ -26,7 +26,7 @@ COPY --from=builder /install /usr/local
 
 WORKDIR /app
 
-COPY local_code_assistant_engine.py coding_assistant.py demo_prompts.py ./
+COPY local_code_assistant_engine.py coding_assistant.py ./
 COPY rag_diagram.png* ./
 
 # knowledge-base is expected as a bind-mount at runtime

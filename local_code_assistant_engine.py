@@ -59,12 +59,17 @@ def get_vllm_llm(_model=None):
 
 
 CODE_EXTENSIONS = (
-    '*.razor', '*.cs', '*.json', '*.ps1', '*.sh',
-    '*.js', '*.js.map', '*.css', '*.css.map',
-    '*.csproj', '*.sql', '*.ts', '*.sln', '*.bat',
+    '*.py', '*.js', '*.ts', '*.jsx', '*.tsx',
+    '*.java', '*.go', '*.rs', '*.rb', '*.php',
+    '*.cs', '*.razor', '*.cpp', '*.c', '*.h',
+    '*.json', '*.yaml', '*.yml', '*.toml',
+    '*.sql', '*.sh', '*.bash', '*.ps1', '*.bat',
+    '*.css', '*.html', '*.xml',
+    '*.csproj', '*.sln', '*.gradle', '*.tf',
+    '*.dockerfile', '*.proto',
 )
 
-DOC_EXTENSIONS = ('*.txt', '*.pdf', '*.md')
+DOC_EXTENSIONS = ('*.txt', '*.pdf', '*.md', '*.rst')
 
 ALL_EXTENSIONS = DOC_EXTENSIONS + CODE_EXTENSIONS
 
@@ -105,16 +110,17 @@ def _build_knowledge_base(folder_path):
 
     text_splitter = RecursiveCharacterTextSplitter(
         separators=[
-            "\nnamespace ",   # C# namespace boundaries
-            "\npublic class ", "\ninternal class ",  # C# class definitions
-            "\n@code",        # Razor code blocks
-            "\nexport ",      # JS/TS exports
-            "\nfunction ",    # JS function definitions
-            "\nCREATE ",      # SQL DDL statements
-            "\n## ",          # Markdown H2 headers
-            "\n### ",         # Markdown H3 headers
-            "\n\n",           # paragraph breaks
-            "\n",             # line breaks (last resort)
+            "\nclass ",        # Python / Java / C# class definitions
+            "\ndef ",          # Python function definitions
+            "\nasync def ",    # Python async functions
+            "\nfunction ",     # JS function definitions
+            "\nexport ",       # JS/TS module exports
+            "\nfunc ",         # Go function definitions
+            "\nCREATE ",       # SQL DDL statements
+            "\n## ",           # Markdown H2 headers
+            "\n### ",          # Markdown H3 headers
+            "\n\n",            # paragraph breaks
+            "\n",              # line breaks (last resort)
         ],
         chunk_size=2000,
         chunk_overlap=400,
@@ -204,18 +210,19 @@ def vllm_rag_inference(model, query):
     )
     
     system_prompt = (
-        "You are a senior architect for evolving monolithic .NET apps: separate HTTP API "
-        "(logic + data), UI that calls the API only, optional SQLite→server DB, and "
-        "practical containers/K8s (config, health, ingress). Prefer small, incremental steps. "
-        "Typical stack: C#, ASP.NET, Blazor/Razor, TypeScript/JS, SQL, PowerShell.\n\n"
+        "You are a senior software engineer and coding assistant with deep expertise "
+        "across multiple languages and frameworks. You help developers understand, "
+        "refactor, extend, and debug codebases by grounding every answer in the "
+        "source code excerpts provided below.\n\n"
         "Rules:\n"
-        "- Base every claim on the excerpts below—names, signatures, and dependencies as "
-        "shown. No invented APIs; if unsure, use a TODO stub.\n"
-        "- Copy patterns from excerpts (layering, routing, DI). Match concrete vs interface "
-        "registration/injection exactly; do not add I* services unless they appear in context.\n"
-        "- For split/order-of-work reasoning, point to specific call sites in the excerpts.\n"
-        "- Code: idiomatic, with required usings/imports; when the user wants implementation "
-        "detail, show new pieces and how the existing app wires to them.\n"
+        "- Base every claim on the excerpts below — names, signatures, and dependencies "
+        "as shown. Do not invent APIs; if unsure, insert a TODO stub with explanation.\n"
+        "- Follow the patterns visible in the excerpts (architecture, naming, dependency "
+        "injection, error handling). Match the existing style exactly.\n"
+        "- When reasoning about refactoring or ordering of work, point to specific call "
+        "sites in the excerpts.\n"
+        "- Code: idiomatic, with required imports; when the user wants implementation "
+        "detail, show new pieces and how they integrate with the existing codebase.\n"
         "- Cite with backtick paths from excerpt headers; never excerpt numbers alone. "
         "Only attribute behavior to files listed under \"Files in this context\"."
     )
