@@ -33,8 +33,8 @@ _last_retrieved_docs = []
 _cached_knowledge_base = None
 _cached_kb_mtime = None
 
-MODEL_ID = 'nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16'
-VLLM_BASE_URL = 'http://localhost:8000/v1'
+MODEL_ID = os.environ.get('MODEL_ID', 'nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16')
+VLLM_BASE_URL = os.environ.get('VLLM_BASE_URL', 'http://localhost:8000/v1')
 
 _THINK_RE = re.compile(r'<think>.*?</think>\s*', re.DOTALL)
 

@@ -65,14 +65,75 @@ uv pip install "langchain-openai>=0.1.0" "langchain-community>=0.0.30" \
 
 ---
 
-## 3. Deploying Nemotron-3 Nano with vLLM
+## 3. Docker deployment (recommended)
+
+The easiest way to run the full stack is with Docker Compose. A single
+command starts both the vLLM model server **and** the Gradio UI.
+
+### 3.1 Create a `.env` file
+
+```bash
+cat > .env << 'EOF'
+HF_TOKEN=your_huggingface_token_here
+# Set to the number of GPUs available (default 8)
+TENSOR_PARALLEL_SIZE=8
+EOF
+```
+
+### 3.2 Start everything
+
+```bash
+docker compose up -d
+```
+
+This will:
+
+1. Pull the `vllm/vllm-openai` image and start serving Nemotron-3 Nano 30B.
+2. Build the `coding-assistant` image from the repo `Dockerfile`.
+3. Wait for vLLM to become healthy before starting the Gradio UI.
+
+The Gradio UI will be available at **http://localhost:7860** once vLLM finishes
+loading (the first start downloads ~60 GB of model weights).
+
+### 3.3 Useful commands
+
+```bash
+# Watch vLLM model loading progress
+docker compose logs -f vllm
+
+# Rebuild the assistant image after code changes
+docker compose up -d --build coding-assistant
+
+# Stop everything
+docker compose down
+
+# Run only the vLLM server (run the Gradio app on the host)
+docker compose up -d vllm
+```
+
+### 3.4 Building and pushing the assistant image manually
+
+```bash
+docker build -t coding-assistant .
+docker tag coding-assistant ghcr.io/<your-github-user>/coding-assistant:latest
+docker push ghcr.io/<your-github-user>/coding-assistant:latest
+```
+
+---
+
+## 4. Manual setup (without Docker)
+
+If you prefer running the Gradio app directly on the host, follow the steps
+below.
+
+### 4.1 Deploying Nemotron-3 Nano with vLLM
 
 The helper code assumes a local OpenAI‑compatible HTTP endpoint at:
 
 - **Base URL**: `http://localhost:8000/v1`
 - **Model name**: `nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16`
 
-### 3.1 Configure your Hugging Face token via `.env`
+### 4.2 Configure your Hugging Face token via `.env`
 
 Create a `.env` file in the repo root:
 
@@ -84,7 +145,7 @@ EOF
 
 Make sure `.env` is **not** committed to git (it should already be in `.gitignore`).
 
-### 3.2 Start vLLM with Docker Compose
+### 4.3 Start vLLM with Docker Compose
 
 From the repo root, run:
 
@@ -92,7 +153,7 @@ From the repo root, run:
 docker compose -f docker-compose.vllm.yml up -d
 ```
 
-This launches Nemotron-3 Nano 30B on 2 GPUs with tensor parallelism. The first run will download ~60GB of model weights.
+This launches Nemotron-3 Nano 30B with tensor parallelism. The first run will download ~60 GB of model weights.
 
 Monitor progress with:
 
@@ -104,7 +165,7 @@ Leave this container running; the Python engine will call it through the OpenAI�
 
 ---
 
-## 4. Preparing the knowledge base
+## 5. Preparing the knowledge base
 
 Place documents into the `knowledge-base` directory in the repo root. Supported formats:
 
@@ -121,7 +182,7 @@ The RAG helper will:
 
 ---
 
-## 5. Using the engine
+## 6. Using the engine
 
 In your own Python code, you can import and call the helpers:
 
@@ -145,7 +206,7 @@ Notes:
 
 ---
 
-## 6. Running ad‑hoc tests (engine only)
+## 7. Running ad‑hoc tests (engine only)
 
 From the repo root, with vLLM running and venv activated, you can start a Python REPL:
 
@@ -166,7 +227,7 @@ If everything is wired correctly, you should see a C++ answer plus timing statis
 
 ---
 
-## 7. Running the Gradio UI
+## 8. Running the Gradio UI
 
 The main interactive experience is provided by `coding_assistant.py`, which builds a Gradio app with:
 

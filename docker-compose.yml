@@ -1,0 +1,60 @@
+version: "3.8"
+
+services:
+  # ── vLLM inference server (Nemotron-3 Nano 30B) ──────────────────────────
+  vllm:
+    image: vllm/vllm-openai:latest
+    container_name: vllm-nemotron-3-nano
+    ports:
+      - "8000:8000"
+    volumes:
+      - ~/.cache/huggingface:/root/.cache/huggingface
+    environment:
+      - HF_TOKEN=${HF_TOKEN}
+    command: >
+      --model nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16
+      --port 8000
+      --tensor-parallel-size ${TENSOR_PARALLEL_SIZE:-8}
+      --trust-remote-code
+      --gpu-memory-utilization 0.9
+      --max-model-len 65536
+      --dtype auto
+      --async-scheduling
+      --kv-cache-dtype auto
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    restart: unless-stopped
+    ipc: host
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8000/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 120
+      start_period: 300s
+
+  # ── Gradio coding assistant UI ───────────────────────────────────────────
+  coding-assistant:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: coding-assistant
+    ports:
+      - "7860:7860"
+    volumes:
+      - ./knowledge-base:/app/knowledge-base:ro
+    environment:
+      - VLLM_BASE_URL=http://vllm:8000/v1
+      - MODEL_ID=${MODEL_ID:-nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16}
+    depends_on:
+      vllm:
+        condition: service_healthy
+    restart: unless-stopped
+
+networks:
+  default:
+    name: vllm-network
