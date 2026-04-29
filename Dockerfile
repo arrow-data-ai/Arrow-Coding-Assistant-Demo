@@ -9,6 +9,9 @@ WORKDIR /app
 
 COPY requirements.txt .
 
+# Fresh pip avoids slow dependency backtracking on unpinned packages.
+RUN pip install --no-cache-dir -U "pip>=24.0"
+
 # Install deps: swap faiss-gpu for faiss-cpu (GPU inference is in the vLLM
 # container) and drop packages the app never imports (vllm, jq).
 RUN pip install --no-cache-dir --prefix=/install \

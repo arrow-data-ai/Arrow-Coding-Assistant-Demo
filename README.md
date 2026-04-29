@@ -5,6 +5,8 @@ A **local RAG-powered coding assistant** that connects to a self-hosted
 interactive Gradio chat UI. Drop your codebase into `knowledge-base/` and the
 assistant will ground its answers in your actual source code and docs.
 
+![Coding assistant main page](img/main_page.png)
+
 ## What's included
 
 | File | Purpose |
@@ -165,20 +167,3 @@ docker build -t coding-assistant .
 docker tag coding-assistant ghcr.io/<your-github-user>/coding-assistant:latest
 docker push ghcr.io/<your-github-user>/coding-assistant:latest
 ```
-
----
-
-## Creating a branch for your project
-
-This `main` branch is a **template**. To create a customized version for a
-specific project:
-
-```bash
-git checkout -b my-project
-# Replace knowledge-base/ contents with your codebase
-# Customize prompts in local_code_assistant_engine.py if desired
-git add -A && git commit -m "my-project: add knowledge base and customize prompts"
-git push -u origin my-project
-```
-
-See the `c#` branch for an example of a project-specific configuration.

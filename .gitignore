@@ -47,10 +47,10 @@ Thumbs.db
 *.flv
 *.mov
 *.wmv
-.venv 
 .nfs*
 
 .env
 .venv/
 .vscode/
 .gradio/
+__pycache__/

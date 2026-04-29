@@ -6,8 +6,8 @@ langchain-community
 langchain-classic
 pypdf
 faiss-gpu-cu12>=1.13.0
-gradio
-gradio_toggle
+gradio==5.12.0
+gradio_toggle==2.0.2
 jq
 vllm
 tiktoken
