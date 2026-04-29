@@ -1,0 +1,20 @@
+name: Mirror to Arrow GitHub Organization
+
+on: [push, delete] # Runs whenever you push new code or delete a branch
+
+jobs:
+  git-mirror:
+    if: github.repository == 'Razgaleh/Arrow-Coding-Assistant-Demo'
+    runs-on: ubuntu-latest
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0 # Fetches all history for all branches and tags
+          persist-credentials: false # Prevent checkout token from overriding mirror auth
+      - name: Mirror to Target
+        uses: pixta-dev/repository-mirroring-action@v1
+        with:
+          target_repo_url: https://x-access-token:${{ secrets.MIRROR_TOKEN }}@github.com/arrow-data-ai/Arrow-Coding-Assistant-Demo.git
