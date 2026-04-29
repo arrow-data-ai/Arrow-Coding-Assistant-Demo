@@ -158,12 +158,3 @@ print(rag_res["response"])
 print(rag_res["metrics"])  # {'tokens': ..., 'time': ..., 'tps': ...}
 ```
 
----
-
-## Building and pushing the Docker image
-
-```bash
-docker build -t coding-assistant .
-docker tag coding-assistant ghcr.io/<your-github-user>/coding-assistant:latest
-docker push ghcr.io/<your-github-user>/coding-assistant:latest
-```
